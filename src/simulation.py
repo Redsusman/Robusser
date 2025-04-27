@@ -1,16 +1,12 @@
 import numpy as np
-grid = [
-    [1,2,3,4,5],
-    [6,7,8,9,10],
-    [11,12,13,14,15],
-    [16, 17,18,19,20],
-    [21,22,23,24,25],
-    [25,26,27,28,29,30],
-]
-
-class Node:
-    def __init__(self, value, cell_x, cell_y):
-        self.value = value
-        self.string_val = str(value)
-
-node_grid = [[Node(grid[row][col], row, col) for col in range(len(grid[0]))] for row in range(len(grid))]
+def generate_gridmap(rows, cols):
+    grid = np.random.randint(0, 2, size=(rows, cols))
+    grid[0][0] = 0
+    grid[rows-1][cols-1] = 0
+    return grid
+# Initialize the A* path follower
+# (0, 0)(1, 1)(2, 1)(3, 2)(3, 3)(4, 3)(5, 4)(5, 5)(5, 6)(6, 5)(7, 6)(7, 7)(7, 8)(8, 9)(9, 9)
+row=10
+col=10
+grid = generate_gridmap(row,col)
+print(grid)

@@ -5,10 +5,11 @@ import time
 import math
 import heapq
 
+
 class Point:
     def __init__(self, x: float, y: float):
-        self.x=x
-        self.y=y
+        self.x = x
+        self.y = y
         self.point = (x, y)
 
 
@@ -156,11 +157,12 @@ class Pure_Pursuit_Controller:
             ):
                 break
 
+
 class Node:
     def __init__(self, value, cell_idx, cell_idy):
         self.value = value
         self.idx = cell_idx
-        self.idy= cell_idy
+        self.idy = cell_idy
         self.g = 0
         self.h = 0
         self.f = 0
@@ -170,25 +172,32 @@ class Node:
 
     def __lt__(self, other):
         return self.f < other.f
-    
+
     # You might want to add other comparison methods for completeness
     def __eq__(self, other):
         return self.idx == other.idx and self.idy == other.idy
 
+
 class AStar_Path_Follower:
     def __init__(self, map_grid):
         self.map_grid = map_grid
-        self.node_grid =  [[Node(self.map_grid[row][col], row, col) for col in range(len(self.map_grid[0]))] for row in range(len(self.map_grid))]
+        self.node_grid = [
+            [
+                Node(self.map_grid[row][col], row, col)
+                for col in range(len(self.map_grid[0]))
+            ]
+            for row in range(len(self.map_grid))
+        ]
 
     def search_neighbor(self, grid, cell_i, cell_j):
-        offsets = [(1,1), (1,0),(1,-1),(0,-1),(-1,-1),(-1,0),(-1,1),(0,1)]
+        offsets = [(1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1)]
         neighbors = []
         for x, y in offsets:
             neighbor_x, neighbor_y = cell_i + x, cell_j + y
             if 0 <= neighbor_x < len(grid) and 0 <= neighbor_y < len(grid[0]):
                 neighbors.append((grid[neighbor_x][neighbor_y]))
         return neighbors
-    
+
     def reconstruct_path(self, end_node):
         path = []
         current = end_node
@@ -197,7 +206,7 @@ class AStar_Path_Follower:
             current = current.parent
         path.reverse()
         return path
-    
+
     def find_path(self, start, end):
         obstacle = 1
         closed = []
@@ -208,94 +217,115 @@ class AStar_Path_Follower:
             if current_node == end:
                 return self.reconstruct_path(end)
             closed.append(current_node)
-            children = self.search_neighbor(self.node_grid, current_node.idx, current_node.idy)
+            children = self.search_neighbor(
+                self.node_grid, current_node.idx, current_node.idy
+            )
             for child in children:
                 if child in closed or child.value == obstacle:
                     continue
                 if child in open and child.g <= current_node.g:
                     continue
-                child.g = current_node.g + math.hypot(child.idx-current_node.idx, child.idy-child.idx)
-                child.h = math.hypot(end.idx-child.idx, end.idy-child.idy)
-                child.f = child.h+child.g
-                child.parent = current_node #new code
+                child.g = current_node.g + math.hypot(
+                    child.idx - current_node.idx, child.idy - current_node.idy
+                )
+                child.h = math.hypot(end.idx - child.idx, end.idy - child.idy)
+                child.f = child.h + child.g
+                child.parent = current_node  # new code
                 if child not in open:
                     heapq.heappush(open, child)
 
         return None
-    
+
+
+# Example usage
+
+
 class DWA_Controller:
     def __init__(self):
         self = None
 
+
 class Elevator:
     def __init__(self):
-        self=None
+        self = None
 
 
-# plt.ion()
-# drive = Drive(0, 0, 0, 10)
-# dt = 0.1
-# left_speed = 0
-# right_speed = 0
+def generate_gridmap(rows, cols):
+    grid = np.random.randint(0, 2, size=(rows, cols))
+    grid[0][0] = 0
+    grid[rows - 1][cols - 1] = 0
+    return grid
 
-# control = Pure_Pursuit_Controller(
-#     drive, PIDController(1, 0, 0), PIDController(1, 0, 0), 0.5, 1, 0, 0
-# )
-# path = [
-#     Point(0, 0),
-#     Point(3, 4),
-#     Point(5, 8),
-#     Point(10, 4),
-#     Point(14, 8),
-#     Point(15, 5),
-#     Point(16, 4),
-#     Point(13, 3),
-#     Point(10, 1),
-# ]
-# smoother = Chaikin_Smooth(path)
-# smoothed_path = smoother.smooth_path(5)
-# control.follow_path(smoothed_path)
-# fig, ax = plt.subplots()
-# ax.plot(
-#     [x.point[0] for x in smoothed_path],
-#     [x.point[1] for x in smoothed_path],
-#     label="True Path",
-# )
-# ax.plot(drive.x_list, drive.y_list, label="Robot Path")
-# plt.legend()
-# plt.show(block=True)
-# Example grid (0 = free space, 1 = obstacle)
-grid = [
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
-        [0, 0, 1, 0, 1, 0, 1, 0, 1, 0],
-        [0, 0, 0, 0, 1, 0, 0, 0, 1, 0],
-        [0, 1, 1, 0, 1, 0, 1, 1, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 1, 1, 1, 0, 1, 1, 1, 0],
-        [0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-        [0, 1, 1, 0, 1, 1, 1, 0, 1, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-]
+
 # Initialize the A* path follower
 # (0, 0)(1, 1)(2, 1)(3, 2)(3, 3)(4, 3)(5, 4)(5, 5)(5, 6)(6, 5)(7, 6)(7, 7)(7, 8)(8, 9)(9, 9)
+row = 10
+col = 10
+grid = [
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
+    [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
+    [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 1, 1, 1, 0],
+    [0, 1, 1, 1, 1, 0, 1, 1, 1, 0],
+    [0, 1, 1, 1, 1, 0, 1, 1, 1, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+]
 
 astar = AStar_Path_Follower(grid)
 
 # Define start and end nodes
 start = astar.node_grid[0][0]  # Top-left corner
-end = astar.node_grid[9][9]    # Bottom-right corner
+end = astar.node_grid[9][9]  # Bottom-right corner
 
 # Find the path
 path = astar.find_path(start, end)
+# plot grid:
+node_grid = astar.node_grid
+colors = ["red" if node.value == 1 else "blue" for row in node_grid for node in row]
+
+# Extract x and y coordinates
+x_grid = [node.idx for row in node_grid for node in row]
+y_grid = [node.idy for row in node_grid for node in row]
+
+# Plot the grid nodes with colors
+plt.scatter(x_grid, y_grid, c=colors, label="Grid Nodes", alpha=0.5)
+plt.xlabel("X")
+plt.ylabel("Y")
+plt.legend()
 
 if path:
     x = [point.x for point in path]
     y = [point.y for point in path]
-    plt.plot(x,y, "o-",label="A* Path")
-    for point in path:
-        print(f"({point.x}, {point.y})")
+    plt.plot(x, y, "", label="A* Path")
 else:
     print("No path found.")
+
+
+# plt.ion()
+drive = Drive(0, 0, 0, 10)
+dt = 0.1
+left_speed = 0
+right_speed = 0
+
+control = Pure_Pursuit_Controller(
+    drive, PIDController(1, 0, 0), PIDController(1, 0, 0), 1, 1, 0, 0
+)
+if path is not None:
+    smoother = Chaikin_Smooth(path)
+    smoothed_path = smoother.smooth_path(4)
+    control.follow_path(smoothed_path)
+else:
+    print("No valid path found. Cannot proceed with smoothing or following.")
+plt.plot(
+    [x.point[0] for x in smoothed_path],
+    [x.point[1] for x in smoothed_path],
+    label="True Path",
+)
+plt.plot(drive.x_list, drive.y_list, label="Robot Path")
+plt.legend()
+# plt.show(block=True)
 
 plt.show(block=True)
