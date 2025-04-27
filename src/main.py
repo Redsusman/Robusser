@@ -1,6 +1,7 @@
 from vex import *
 import math
 
+link = SerialLink(Ports.PORT2,"port",VexlinkType.GENERIC)
 
 # class Point:
 #     def __init__(self, x: float, y: float):

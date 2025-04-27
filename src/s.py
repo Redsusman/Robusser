@@ -4,6 +4,7 @@ import keyboard
 import time
 import math
 import heapq
+import cv2
 
 
 class Point:
@@ -176,6 +177,7 @@ class Node:
     def __eq__(self, other):
         return self.idx == other.idx and self.idy == other.idy
 
+
 class AStar_Path_Follower:
     def __init__(self, map_grid):
         self.map_grid = map_grid
@@ -234,8 +236,20 @@ class AStar_Path_Follower:
 
         return None
 
+
 class DWA_Controller:
-    def __init__(self, max_vel: float, max_accel: float, max_steer: float, dt: float, total_search_time, alpha, beta, gamma, robot_radius):
+    def __init__(
+        self,
+        max_vel: float,
+        max_accel: float,
+        max_steer: float,
+        dt: float,
+        total_search_time,
+        alpha,
+        beta,
+        gamma,
+        robot_radius,
+    ):
         self.max_vel = max_vel
         self.max_accel = max_accel
         self.max_steer = max_steer
@@ -245,34 +259,95 @@ class DWA_Controller:
         self.beta = beta
         self.gamma = gamma
         self.robot_radius = robot_radius
+        self.min_vel = 0.01
+        self.min_omega = 0.01
 
-    def find_best_velocity(self, current_vel, current_omega, target_vel, target_point, search_step, obstacle_dist, current_x, current_y, current_theta, closest_point, obstacle):
-        velocity_window = np.arange(current_vel - self.max_accel*self.dt, current_vel + self.max_accel*self.dt, search_step)
-        omega_window = np.arange(current_omega - self.max_steer*self.dt, current_omega + self.max_steer*self.dt, search_step)
-        admissable_vel, admissable_omega = math.sqrt(2*self.max_accel*obstacle_dist), math.sqrt(2*self.max_steer*obstacle_dist)
-        searchable_velocities = np.sort(velocity_window[velocity_window <= admissable_vel])
-        searchable_omega = np.sort(omega_window[omega_window <= admissable_omega])
-        optimal = -float('inf')  # Initialize optimal with a high value for minimization
-        for v in searchable_velocities:
-            for omega in searchable_omega:
-                x,y,theta = current_x, current_y, current_theta
-                trajectory = []
+    def find_best_velocity(
+        self,
+        current_vel,
+        current_omega,
+        target_point,
+        obstacles,
+        search_step,
+        current_x,
+        current_y,
+        current_theta,
+    ):
+        velocity_window = np.arange(
+            current_vel - self.max_accel * self.dt,
+            current_vel + self.max_accel * self.dt,
+            search_step,
+        )
+        omega_window = np.arange(
+            current_omega - self.max_steer * self.dt,
+            current_omega + self.max_steer * self.dt,
+            search_step,
+        )
+
+        best_score = -float("inf")
+        best_v, best_omega = 0.0, 0.0
+
+        for v in velocity_window:
+            for omega in omega_window:
+                x, y, theta = current_x, current_y, current_theta
+                min_obstacle_dist = float("inf")
+                collided = False
                 for t in np.arange(0, self.total_search_time, self.dt):
-                    #simulate trajectories first:
                     x += v * np.cos(theta) * self.dt
                     y += v * np.sin(theta) * self.dt
                     theta += omega * self.dt
-                    trajectory.append((x,y,theta))
-                    #calculate costs: distance, heading error, and collision, then final weighted cost
-                    distance = np.linalg.norm(trajectory[-1][:2] - obstacle)
-                    heading_error = np.arctan2(target_point[1] - trajectory[-1][1], target_point[0] - trajectory[-1][0]) - trajectory[-1][2]
-                    collision_cost = np.linalg.norm(trajectory[-1][:2] - obstacle_dist)
-                    cost = self.alpha*heading_error + self.beta*distance + self.gamma*collision_cost
-                    if cost > optimal:
-                        optimal = cost
-                        best_vel = v
-                        best_omega = omega
-        return best_vel, best_omega, optimal
+                    for obs in obstacles:
+                        dist = np.linalg.norm([x - obs[0], y - obs[1]])
+                        min_obstacle_dist = min(min_obstacle_dist, dist)
+                        if dist < self.robot_radius:
+                            collided = True
+                            break
+                    if collided:
+                        break
+                if collided:
+                    continue
+                admissable_vel = math.sqrt(2 * self.max_accel * min_obstacle_dist)
+                if abs(v) > admissable_vel:
+                    continue
+                heading_error = (
+                    np.arctan2(target_point[1] - y, target_point[0] - x) - theta
+                )
+                heading_error = np.arctan2(np.sin(heading_error), np.cos(heading_error))
+                score = (
+                    self.alpha * heading_error
+                    + self.beta * min_obstacle_dist
+                    + self.gamma * abs(v)
+                )
+                if score > best_score:
+                    best_score = score
+                    best_v, best_omega = v, omega
+
+        return best_v, best_omega, best_score
+
+    def robot_coords_to_grid(self, x, y, grid):
+        grid_x = int(x / grid.cell_size)
+        grid_y = int(y / grid.cell_size)
+        return grid_x, grid_y
+
+
+class USB_Server_Communicator:
+    def __init__(self):
+        self.port = None
+        self.baudrate = None
+        self.serial = None
+
+    def connect(self):
+        pass
+
+    def send_data(self, args):
+        pass
+
+    def recieve_data(self):
+        pass
+
+    def close(self):
+        pass
+
 
 class Elevator:
     def __init__(self):
@@ -295,7 +370,7 @@ grid = [
     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
     [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
-    [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
+    [0, 0, 1, 1, 0, 1, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 1, 1, 1, 0],
     [0, 1, 1, 1, 1, 0, 1, 1, 1, 0],
@@ -306,8 +381,8 @@ grid = [
 astar = AStar_Path_Follower(grid)
 
 # Define start and end nodes
-start = astar.node_grid[0][0]  # Top-left corner
-end = astar.node_grid[9][7]  # Bottom-right corner
+start = astar.node_grid[0][7]  # Top-left corner
+end = astar.node_grid[4][4]  # Bottom-right corner
 
 # Find the path
 path = astar.find_path(start, end)
@@ -334,13 +409,13 @@ else:
 
 
 # plt.ion()
-drive = Drive(0, 0, 0, 10)
+drive = Drive(0, 7, 0, 10)
 dt = 0.1
 left_speed = 0
 right_speed = 0
 
 control = Pure_Pursuit_Controller(
-    drive, PIDController(1, 0, 0), PIDController(1, 0, 0), 1, 1, 0, 0
+    drive, PIDController(1, 0, 0), PIDController(1, 0, 0), 0.5, 1, 0, 0
 )
 if path is not None:
     smoother = Chaikin_Smooth(path)
