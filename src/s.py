@@ -173,10 +173,8 @@ class Node:
     def __lt__(self, other):
         return self.f < other.f
 
-    # You might want to add other comparison methods for completeness
     def __eq__(self, other):
         return self.idx == other.idx and self.idy == other.idy
-
 
 class AStar_Path_Follower:
     def __init__(self, map_grid):
@@ -236,14 +234,45 @@ class AStar_Path_Follower:
 
         return None
 
-
-# Example usage
-
-
 class DWA_Controller:
-    def __init__(self):
-        self = None
+    def __init__(self, max_vel: float, max_accel: float, max_steer: float, dt: float, total_search_time, alpha, beta, gamma, robot_radius):
+        self.max_vel = max_vel
+        self.max_accel = max_accel
+        self.max_steer = max_steer
+        self.dt = dt
+        self.total_search_time = total_search_time
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+        self.robot_radius = robot_radius
 
+    def find_best_velocity(self, current_vel, current_omega, target_vel, target_point, search_step, obstacle_dist, current_x, current_y, current_theta, closest_point, obstacle):
+        velocity_window = np.arange(current_vel - self.max_accel*self.dt, current_vel + self.max_accel*self.dt, search_step)
+        omega_window = np.arange(current_omega - self.max_steer*self.dt, current_omega + self.max_steer*self.dt, search_step)
+        admissable_vel, admissable_omega = math.sqrt(2*self.max_accel*obstacle_dist), math.sqrt(2*self.max_steer*obstacle_dist)
+        searchable_velocities = np.sort(velocity_window[velocity_window <= admissable_vel])
+        searchable_omega = np.sort(omega_window[omega_window <= admissable_omega])
+        optimal = -float('inf')  # Initialize optimal with a high value for minimization
+        for v in searchable_velocities:
+            for omega in searchable_omega:
+                x,y,theta = current_x, current_y, current_theta
+                trajectory = []
+                for t in np.arange(0, self.total_search_time, self.dt):
+                    #simulate trajectories first:
+                    x += v * np.cos(theta) * self.dt
+                    y += v * np.sin(theta) * self.dt
+                    theta += omega * self.dt
+                    trajectory.append((x,y,theta))
+                    #calculate costs: distance, heading error, and collision, then final weighted cost
+                    distance = np.linalg.norm(trajectory[-1][:2] - obstacle)
+                    heading_error = np.arctan2(target_point[1] - trajectory[-1][1], target_point[0] - trajectory[-1][0]) - trajectory[-1][2]
+                    collision_cost = np.linalg.norm(trajectory[-1][:2] - obstacle_dist)
+                    cost = self.alpha*heading_error + self.beta*distance + self.gamma*collision_cost
+                    if cost > optimal:
+                        optimal = cost
+                        best_vel = v
+                        best_omega = omega
+        return best_vel, best_omega, optimal
 
 class Elevator:
     def __init__(self):
@@ -278,7 +307,7 @@ astar = AStar_Path_Follower(grid)
 
 # Define start and end nodes
 start = astar.node_grid[0][0]  # Top-left corner
-end = astar.node_grid[9][9]  # Bottom-right corner
+end = astar.node_grid[9][7]  # Bottom-right corner
 
 # Find the path
 path = astar.find_path(start, end)
