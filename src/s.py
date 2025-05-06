@@ -5,7 +5,7 @@ import time
 import math
 import heapq
 import cv2
-
+from matplotlib.animation import FuncAnimation
 
 class Point:
     def __init__(self, x: float, y: float):
@@ -37,6 +37,8 @@ class PIDController:
 
 class Drive:
     def __init__(self, x, y, theta, track_width):
+        self.pid_forward = PIDController(0.1, 0.0, 0.0)
+        self.pid_omega = PIDController(5.0, 0.0, 0.0)
         self.x = x
         self.y = y
         self.theta = theta
@@ -72,6 +74,18 @@ class Drive:
         self.y_list = [y]
         self.theta_list = [theta]
 
+    def pid_test_to_point(self, start_point: Point, end_point: Point, dt: float):
+        distance_to_target = math.hypot(end_point.point[0] - self.x, end_point.point[1] - self.y)
+        angle_to_target = math.atan2(end_point.point[1] - start_point.point[1], end_point.point[0] - start_point.point[0])
+        control_forward = self.pid_forward.compute(float(distance_to_target), 0, dt)
+        control_omega = self.pid_omega.compute(self.theta, angle_to_target, dt)
+        return -control_forward, control_omega, distance_to_target
+    
+    def pid_to_points(self,points: list[Point], dt: float):
+        for i in range(len(points) - 1):
+            forward, omega, _= self.pid_test_to_point(points[i], points[i+1],dt)
+            vl, vr = self.inverse(forward, omega)
+            self.forward(vl, vr, dt)
 
 class Chaikin_Smooth:
     def __init__(self, points: list[Point]):
@@ -81,10 +95,10 @@ class Chaikin_Smooth:
         for _ in range(num_iterations):
             new_points = []
             for i in range(len(self.points) - 1):
-                p0 = np.array(self.points[i].point)
-                p1 = np.array(self.points[i + 1].point)
-                q = tuple(0.75 * p0 + 0.25 * p1)
-                r = tuple(0.25 * p0 + 0.75 * p1)
+                p0 = (self.points[i].point)
+                p1 = (self.points[i + 1].point)
+                q = (0.75 * p0[0] + 0.25 * p1[0], 0.75 * p0[1] + 0.25 * p1[1])
+                r = (0.25 * p0[0] + 0.75 * p1[0], 0.25 * p0[1] + 0.75 * p1[1])
                 q_point = Point(q[0], q[1])
                 r_point = Point(r[0], r[1])
                 new_points.append(q_point)
@@ -157,7 +171,6 @@ class Pure_Pursuit_Controller:
                 < 0.1
             ):
                 break
-
 
 class Node:
     def __init__(self, value, cell_idx, cell_idy):
@@ -235,7 +248,10 @@ class AStar_Path_Follower:
                     heapq.heappush(open, child)
 
         return None
+    
 
+    def find_path_dstar_lite(self):
+        pass
 
 class DWA_Controller:
     def __init__(
@@ -334,13 +350,14 @@ class USB_Server_Communicator:
     def __init__(self):
         self.port = None
         self.baudrate = None
-        self.serial = None
+        self.serialPort = None
 
     def connect(self):
         pass
 
     def send_data(self, args):
-        pass
+        data_to_send = b"example_data"  # Replace with the actual data you want to send
+        # self.serialPort.write(data_to_send)
 
     def recieve_data(self):
         pass
@@ -354,68 +371,112 @@ class Elevator:
         self = None
 
 
-def generate_gridmap(rows, cols):
-    grid = np.random.randint(0, 2, size=(rows, cols))
-    grid[0][0] = 0
-    grid[rows - 1][cols - 1] = 0
-    return grid
+drive = Drive(0,0,0,10)
+import keyboard
 
+drive = Drive(0, 0, 1.57, 10)
+path = [Point(0, 0), Point(6, 30), Point(12, 60), Point(24, 70)]
+smooth = Chaikin_Smooth(path)
+smoothed_path = smooth.smooth_path(4)
 
-# Initialize the A* path follower
-# (0, 0)(1, 1)(2, 1)(3, 2)(3, 3)(4, 3)(5, 4)(5, 5)(5, 6)(6, 5)(7, 6)(7, 7)(7, 8)(8, 9)(9, 9)
-row = 10
-col = 10
-grid = [
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
-    [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
-    [0, 0, 1, 1, 0, 1, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 1, 1, 1, 0],
-    [0, 1, 1, 1, 1, 0, 1, 1, 1, 0],
-    [0, 1, 1, 1, 1, 0, 1, 1, 1, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-]
+# points = [Point(0,0), Point(1,1), Point(2,1), Point(3,2), Point(3,3), Point(4,3), Point(5,4), Point(5,5), Point(5,6), Point(6,5), Point(7,6), Point(7,7), Point(7,8), Point(8,9), Point(9,9)]
 
-astar = AStar_Path_Follower(grid)
+# for _ in range(1000):
+#     drive.pid_to_points(points, 0.01)
 
-# Define start and end nodes
-start = astar.node_grid[0][7]  # Top-left corner
-end = astar.node_grid[4][4]  # Bottom-right corner
+# x = [x for x in drive.x_list]
+# y= [y for y in drive.y_list]
+# plt.plot(x,y,label="Robot Path")
+# plt.show()
+# Main loop to control the vehicle and update the plot
+# print("Use 'W', 'A', 'S', 'D' to move the vehicle. Press 'Space' to stop.")
 
-# Find the path
-path = astar.find_path(start, end)
-# plot grid:
-node_grid = astar.node_grid
-colors = ["red" if node.value == 1 else "blue" for row in node_grid for node in row]
+    # Print the current position and orientation
+    # print(f"x: {drive.x:.2f}, y: {drive.y:.2f}, theta: {math.degrees(drive.theta):.2f}")
 
-# Extract x and y coordinates
-x_grid = [node.idx for row in node_grid for node in row]
-y_grid = [node.idy for row in node_grid for node in row]
+# start_point = Point(0,0)
+# end_point = Point(12,0)
 
-# Plot the grid nodes with colors
-plt.scatter(x_grid, y_grid, c=colors, label="Grid Nodes", alpha=0.5)
-plt.xlabel("X")
-plt.ylabel("Y")
-plt.legend()
+# for _ in range(10000):
+#     forward, omega, distance_to_target = drive.pid_test_to_point(start_point, end_point, 0.01)
+#     # print(distance_to_target)
+#     if(distance_to_target >= 2):
+#         vl, vr = drive.inverse(forward, omega)
+#         drive.forward(vl,vr,0.01)
+#     else:
+#         break
+    
 
-if path:
-    x = [point.x for point in path]
-    y = [point.y for point in path]
-    plt.plot(x, y, "", label="A* Path")
-else:
-    print("No path found.")
+# x = [x for x in drive.x_list]
+# y = [y for y in drive.y_list]
+
+# x_path = [start_point.point[0], end_point.point[0]]
+# y_path = [start_point.point[1], end_point.point[1]]
+
+# plt.plot(x, y, label="Robot Path")
+# plt.plot(x_path, y_path, label="Path")
+# plt.show(block=True)
+
+# usb = USB_Server_Communicator()
+
+# usb.send_data("hello")
+# # Initialize the A* path follower
+# # # (0, 0)(1, 1)(2, 1)(3, 2)(3, 3)(4, 3)(5, 4)(5, 5)(5, 6)(6, 5)(7, 6)(7, 7)(7, 8)(8, 9)(9, 9)
+# # row = 10
+# col = 10
+# grid = [
+#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
+#     [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
+#     [0, 0, 1, 1, 0, 1, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 1, 1, 1, 0],
+#     [0, 1, 1, 1, 1, 0, 1, 1, 1, 0],
+#     [0, 1, 1, 1, 1, 0, 1, 1, 1, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+# ]
+
+# astar = AStar_Path_Follower(grid)
+
+# # dwa = DWA_Controller(1.0, 0.5, math.pi, 0.05, 2, 0.1, 0.1, 0.1, 0.2)
+
+# # Define start and end nodes
+# start = astar.node_grid[0][0]  # Top-left corner
+# end = astar.node_grid[9][9]  # Bottom-right corner
+
+# # Find the path
+# path = astar.find_path(start, end)
+# # plot grid:
+# node_grid = astar.node_grid
+# colors = ["red" if node.value == 1 else "blue" for row in node_grid for node in row]
+
+# # Extract x and y coordinates
+# x_grid = [node.idx for row in node_grid for node in row]
+# y_grid = [node.idy for row in node_grid for node in row]
+
+# # Plot the grid nodes with colors
+# plt.scatter(x_grid, y_grid, c=colors, label="Grid Nodes", alpha=0.5)
+# plt.xlabel("X")
+# plt.ylabel("Y")
+# plt.legend()
+
+# if path:
+#     x = [point.x for point in path]
+#     y = [point.y for point in path]
+#     plt.plot(x, y, "", label="A* Path")
+# else:
+#     print("No path found.")
 
 
 # plt.ion()
-drive = Drive(0, 7, 0, 10)
-dt = 0.1
-left_speed = 0
-right_speed = 0
+# drive = Drive(0, 0, 0, 10)
+dt = 0.01
+# left_speed = 0
+# right_speed = 0
 
 control = Pure_Pursuit_Controller(
-    drive, PIDController(1, 0, 0), PIDController(1, 0, 0), 0.5, 1, 0, 0
+    drive, PIDController(1, 0, 0), PIDController(1, 0, 0), 5.0, 2.0, 0,0
 )
 if path is not None:
     smoother = Chaikin_Smooth(path)
@@ -429,7 +490,30 @@ plt.plot(
     label="True Path",
 )
 plt.plot(drive.x_list, drive.y_list, label="Robot Path")
-plt.legend()
+plt.plot([x.point[0] for x in smoothed_path], [x.point[1] for x in smoothed_path], label="Path")
+# plt.plot([point[0] for point in obstacles], [point[1] for point in obstacles], "ro", label="Obstacles")
 # plt.show(block=True)
+quiver = plt.quiver(
+    drive.x_list[0],  # Start at the first position
+    drive.y_list[0],
+    np.cos(drive.theta_list[0]),
+    np.sin(drive.theta_list[0]),
+    angles="xy",
+    scale_units="xy",
+    scale=1,
+    color="r",
+)
 
+def update(frame):
+    # Update the position (X, Y) and direction (U, V) of the quiver
+    quiver.set_offsets([drive.x_list[frame], drive.y_list[frame]])
+    quiver.set_UVC(
+        np.cos(drive.theta_list[frame]),
+        np.sin(drive.theta_list[frame]),
+    )
+
+anim = FuncAnimation(plt.gcf(), update, frames=len(drive.x_list), interval=1000 * dt)
+plt.show()
+    
+plt.legend()
 plt.show(block=True)
