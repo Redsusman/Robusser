@@ -3,10 +3,55 @@ import matplotlib.pyplot as plt
 import keyboard
 import time
 import math
-import heapq
+# import heapq
 import cv2
 from matplotlib.animation import FuncAnimation
 
+def _siftdown(heap, startpos, pos):
+    newitem = heap[pos]
+    while pos > startpos:
+        parentpos = (pos - 1) >> 1
+        parent = heap[parentpos]
+        if newitem.f < parent.f:
+            heap[pos] = parent
+            pos = parentpos
+            continue
+        break
+    heap[pos] = newitem
+
+def _siftup(heap, pos):
+    endpos = len(heap)
+    startpos = pos
+    newitem = heap[pos]
+    childpos = 2*pos + 1
+    while childpos < endpos:
+        rightpos = childpos + 1
+        if rightpos < endpos and not heap[childpos].f < heap[rightpos].f:
+            childpos = rightpos
+        heap[pos] = heap[childpos]
+        pos = childpos
+        childpos = 2*pos + 1
+    heap[pos] = newitem
+    _siftdown(heap, startpos, pos)
+
+def heappush(heap, item):
+    heap.append(item)
+    _siftdown(heap, 0, len(heap)-1)
+
+def heappop(heap):
+    lastelt = heap.pop()
+    if heap:
+        returnitem = heap[0]
+        heap[0] = lastelt
+        _siftup(heap, 0)
+        return returnitem
+    return lastelt
+
+def heapify(heap):
+    n = len(heap)
+    for i in reversed(range(n//2)):
+        _siftup(heap, i)
+        
 class Point:
     def __init__(self, x: float, y: float):
         self.x = x
@@ -60,6 +105,7 @@ class Drive:
         self.x_list.append(self.x)
         self.y_list.append(self.y)
         self.theta_list.append(self.theta)
+        # print(self.x, self.y, math.degrees(self.theta))
 
     def inverse(self, forward: float, omega: float) -> tuple[float, float]:
         vl = forward - ((omega * self.track_width) / 2)
@@ -135,25 +181,56 @@ class Pure_Pursuit_Controller:
             + self.distance_parameter * self.drive.speed
             - self.curvature_parameter * self.previous_curvature
         )
-        robot_pose = np.array([self.drive.x, self.drive.y])
-        path_to_array = np.array([point.point for point in path])
+        robot_pose = (self.drive.x, self.drive.y)
+        path_points = [(point.point[0], point.point[1]) for point in path]
         theta = self.drive.theta
-        distances = np.linalg.norm(path_to_array - robot_pose, axis=1)
-        closest_idx = np.argmin(distances)
-        for i in range(closest_idx, len(path_to_array)):
-            dist = np.linalg.norm(path_to_array[i] - robot_pose)
+        distances = [
+            math.sqrt((p[0] - robot_pose[0]) ** 2 + (p[1] - robot_pose[1]) ** 2)
+            for p in path_points
+        ]
+        closest_idx = min(range(len(distances)), key=lambda i: distances[i])
+        lookahead_point = path_points[-1]
+        for i in range(closest_idx, len(path_points)):
+            p = path_points[i]
+            dist = math.sqrt((p[0] - robot_pose[0]) ** 2 + (p[1] - robot_pose[1]) ** 2)
             if dist >= self.lookahead_distance:
-                lookahead_point = path_to_array[i]
+                lookahead_point = p
                 break
+        dx = lookahead_point[0] - robot_pose[0]
+        dy = lookahead_point[1] - robot_pose[1]
+        alpha = math.atan2(dy, dx) - theta
+        dist = math.sqrt(dx**2 + dy**2)
+        if abs(dist) < 1e-10:
+            curvature = 0.0
         else:
-            lookahead_point = path_to_array[-1]
-
-        dx, dy = lookahead_point - robot_pose
-        alpha = np.arctan2(dy, dx) - theta
-        dist = np.linalg.norm(lookahead_point - robot_pose)
-        curvature = (2 * np.sin(alpha)) / dist
+            curvature = (2.0 * math.sin(alpha)) / dist
         self.previous_curvature = curvature
         return curvature
+    # def calculate(self, path: list[Point]):
+    #     self.lookahead_distance = (
+    #         self.lookahead_distance
+    #         + self.distance_parameter * self.drive.speed
+    #         - self.curvature_parameter * self.previous_curvature
+    #     )
+    #     robot_pose = np.array([self.drive.x, self.drive.y])
+    #     path_to_array = np.array([point.point for point in path])
+    #     theta = self.drive.theta
+    #     distances = np.linalg.norm(path_to_array - robot_pose, axis=1)
+    #     closest_idx = np.argmin(distances)
+    #     for i in range(closest_idx, len(path_to_array)):
+    #         dist = np.linalg.norm(path_to_array[i] - robot_pose)
+    #         if dist >= self.lookahead_distance:
+    #             lookahead_point = path_to_array[i]
+    #             break
+    #     else:
+    #         lookahead_point = path_to_array[-1]
+
+    #     dx, dy = lookahead_point - robot_pose
+    #     alpha = np.arctan2(dy, dx) - theta
+    #     dist = np.linalg.norm(lookahead_point - robot_pose)
+    #     curvature = (2 * np.sin(alpha)) / dist
+    #     self.previous_curvature = curvature
+    #     return curvature
 
     def follow_path(self, path: list[Point]):
         dt = 0.1
@@ -224,9 +301,9 @@ class AStar_Path_Follower:
         obstacle = 1
         closed = []
         open = [start]
-        heapq.heapify(open)
+        heapify(open)
         while len(open) > 0:
-            current_node = heapq.heappop(open)
+            current_node = heappop(open)
             if current_node == end:
                 return self.reconstruct_path(end)
             closed.append(current_node)
@@ -245,7 +322,7 @@ class AStar_Path_Follower:
                 child.f = child.h + child.g
                 child.parent = current_node  # new code
                 if child not in open:
-                    heapq.heappush(open, child)
+                    heappush(open, child)
 
         return None
     
@@ -371,13 +448,13 @@ class Elevator:
         self = None
 
 
-drive = Drive(0,0,0,10)
-import keyboard
+drive = Drive(0,0,math.pi/2,10)
+# import keyboard
 
-drive = Drive(0, 0, 1.57, 10)
-path = [Point(0, 0), Point(6, 30), Point(12, 60), Point(24, 70)]
-smooth = Chaikin_Smooth(path)
-smoothed_path = smooth.smooth_path(4)
+# drive = Drive(0, 0, 1.57, 10)
+# path = [Point(0, 0), Point(0,3), Point(3,3), Point(10,3), Point(10,7)] #ft
+# smooth = Chaikin_Smooth(path)
+# smoothed_path = smooth.smooth_path(4)
 
 # points = [Point(0,0), Point(1,1), Point(2,1), Point(3,2), Point(3,3), Point(4,3), Point(5,4), Point(5,5), Point(5,6), Point(6,5), Point(7,6), Point(7,7), Point(7,8), Point(8,9), Point(9,9)]
 
@@ -424,59 +501,59 @@ smoothed_path = smooth.smooth_path(4)
 # # # (0, 0)(1, 1)(2, 1)(3, 2)(3, 3)(4, 3)(5, 4)(5, 5)(5, 6)(6, 5)(7, 6)(7, 7)(7, 8)(8, 9)(9, 9)
 # # row = 10
 # col = 10
-# grid = [
-#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-#     [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
-#     [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
-#     [0, 0, 1, 1, 0, 1, 0, 0, 0, 0],
-#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-#     [0, 0, 0, 0, 0, 0, 1, 1, 1, 0],
-#     [0, 1, 1, 1, 1, 0, 1, 1, 1, 0],
-#     [0, 1, 1, 1, 1, 0, 1, 1, 1, 0],
-#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-# ]
+grid = [
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
+    [0, 0, 1, 1, 1, 1, 0, 0, 0, 0],
+    [0, 0, 1, 1, 0, 1, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 1, 1, 1, 0],
+    [0, 1, 1, 1, 1, 0, 1, 1, 1, 0],
+    [0, 1, 1, 1, 1, 0, 1, 1, 1, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+]
 
-# astar = AStar_Path_Follower(grid)
+astar = AStar_Path_Follower(grid)
 
-# # dwa = DWA_Controller(1.0, 0.5, math.pi, 0.05, 2, 0.1, 0.1, 0.1, 0.2)
+# dwa = DWA_Controller(1.0, 0.5, math.pi, 0.05, 2, 0.1, 0.1, 0.1, 0.2)
 
-# # Define start and end nodes
-# start = astar.node_grid[0][0]  # Top-left corner
-# end = astar.node_grid[9][9]  # Bottom-right corner
+# Define start and end nodes
+start = astar.node_grid[0][0]  # Top-left corner
+end = astar.node_grid[9][9]  # Bottom-right corner
 
-# # Find the path
-# path = astar.find_path(start, end)
+# Find the path
+path = astar.find_path(start, end)
 # # plot grid:
-# node_grid = astar.node_grid
-# colors = ["red" if node.value == 1 else "blue" for row in node_grid for node in row]
+node_grid = astar.node_grid
+colors = ["red" if node.value == 1 else "blue" for row in node_grid for node in row]
 
-# # Extract x and y coordinates
-# x_grid = [node.idx for row in node_grid for node in row]
-# y_grid = [node.idy for row in node_grid for node in row]
+# Extract x and y coordinates
+x_grid = [node.idx for row in node_grid for node in row]
+y_grid = [node.idy for row in node_grid for node in row]
 
-# # Plot the grid nodes with colors
-# plt.scatter(x_grid, y_grid, c=colors, label="Grid Nodes", alpha=0.5)
-# plt.xlabel("X")
-# plt.ylabel("Y")
-# plt.legend()
+# Plot the grid nodes with colors
+plt.scatter(x_grid, y_grid, c=colors, label="Grid Nodes", alpha=0.5)
+plt.xlabel("X")
+plt.ylabel("Y")
+plt.legend()
 
-# if path:
-#     x = [point.x for point in path]
-#     y = [point.y for point in path]
-#     plt.plot(x, y, "", label="A* Path")
-# else:
-#     print("No path found.")
+if path:
+    x = [point.x for point in path]
+    y = [point.y for point in path]
+    plt.plot(x, y, "", label="A* Path")
+else:
+    print("No path found.")
 
 
-# plt.ion()
-# drive = Drive(0, 0, 0, 10)
+# # plt.ion()
+# # drive = Drive(0, 0, 0, 10)
 dt = 0.01
-# left_speed = 0
-# right_speed = 0
+# # left_speed = 0
+# # right_speed = 0
 
 control = Pure_Pursuit_Controller(
-    drive, PIDController(1, 0, 0), PIDController(1, 0, 0), 5.0, 2.0, 0,0
+    drive, PIDController(1, 0, 0), PIDController(1, 0, 0), 0.5, 1, 0.005,0.0005
 )
 if path is not None:
     smoother = Chaikin_Smooth(path)
@@ -491,6 +568,7 @@ plt.plot(
 )
 plt.plot(drive.x_list, drive.y_list, label="Robot Path")
 plt.plot([x.point[0] for x in smoothed_path], [x.point[1] for x in smoothed_path], label="Path")
+# plt.plot([x.point[0] for x in path], [x.point[1] for x in path], label="Path")
 # plt.plot([point[0] for point in obstacles], [point[1] for point in obstacles], "ro", label="Obstacles")
 # plt.show(block=True)
 quiver = plt.quiver(
@@ -515,5 +593,4 @@ def update(frame):
 anim = FuncAnimation(plt.gcf(), update, frames=len(drive.x_list), interval=1000 * dt)
 plt.show()
     
-plt.legend()
-plt.show(block=True)
+

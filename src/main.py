@@ -1,10 +1,56 @@
 from vex import *
 import math
 
+def _siftdown(heap, startpos, pos):
+    newitem = heap[pos]
+    while pos > startpos:
+        parentpos = (pos - 1) >> 1
+        parent = heap[parentpos]
+        if newitem.f < parent.f:
+            heap[pos] = parent
+            pos = parentpos
+            continue
+        break
+    heap[pos] = newitem
+
+def _siftup(heap, pos):
+    endpos = len(heap)
+    startpos = pos
+    newitem = heap[pos]
+    childpos = 2*pos + 1
+    while childpos < endpos:
+        rightpos = childpos + 1
+        if rightpos < endpos and not heap[childpos].f < heap[rightpos].f:
+            childpos = rightpos
+        heap[pos] = heap[childpos]
+        pos = childpos
+        childpos = 2*pos + 1
+    heap[pos] = newitem
+    _siftdown(heap, startpos, pos)
+
+def heappush(heap, item):
+    heap.append(item)
+    _siftdown(heap, 0, len(heap)-1)
+
+def heappop(heap):
+    lastelt = heap.pop()
+    if heap:
+        returnitem = heap[0]
+        heap[0] = lastelt
+        _siftup(heap, 0)
+        return returnitem
+    return lastelt
+
+def heapify(heap):
+    n = len(heap)
+    for i in reversed(range(n//2)):
+        _siftup(heap, i)
+        
 class Point:
     def __init__(self, x: float, y: float):
         self.point = (x, y)
-    
+
+
 class PIDController:
     def __init__(self, kp: float, ki: float, kd: float):
         self.kp = kp
@@ -24,6 +70,15 @@ class PIDController:
 
     def get_error(self):
         return self.previous_error
+
+
+class Distance_Sensor:
+    def __init__(self):
+        self.sensor = Distance(Ports.PORT5)
+
+    def get_distance(self) -> float:
+        return self.sensor.object_distance(INCHES)
+
 
 class Drive:
     def __init__(
@@ -56,11 +111,12 @@ class Drive:
         self.right_motor.set_reversed(True)
         self.imu = Inertial(imu_port)
         self.imu.calibrate()
+        self.imu.set_turn_type(TurnType.LEFT)
 
     def hypot(self, x, y):
         return math.sqrt(x**2 + y**2)
 
-    def forward(self, left_speed: float, right_speed: float, dt: float):
+    def forward(self, left_speed: float, right_speed: float):
         speed = (right_speed + left_speed) / 2
         omega = (right_speed - left_speed) / self.track_width
         return speed, omega
@@ -71,25 +127,32 @@ class Drive:
         right_encoder_rev: float,
         gyro_angle: float,
     ):
-        left_distance = left_encoder_rev * 2 * math.pi * self.wheel_radius
-        right_distance = right_encoder_rev * 2 * math.pi * self.wheel_radius
+        left_distance = (left_encoder_rev * 2 * math.pi * self.wheel_radius) / 12
+        right_distance = (right_encoder_rev * 2 * math.pi * self.wheel_radius) / 12
         distance = (left_distance + right_distance) / 2
         delta_distance = distance - self.previous_distance
-        delta_theta = gyro_angle - self.previous_theta
-        self.theta += delta_theta
-        self.x += delta_distance * math.cos(gyro_angle + (delta_theta / 2))
-        self.y += delta_distance * math.sin(gyro_angle + (delta_theta / 2))
-        self.previous_distance = distance
-        self.previous_theta = gyro_angle
+        self.theta = gyro_angle
+        self.x += delta_distance * math.cos(gyro_angle)
+        self.y += delta_distance * math.sin(gyro_angle)
+        self.speed = (
+            self.left_motor.velocity(RPM) + self.right_motor.velocity(RPM)
+        ) / 2
+        left_speed_fts = (
+            (self.left_motor.velocity(RPM) * math.pi * self.wheel_diameter) / 60
+        ) / 12
+        right_speed_fts = (
+            (self.right_motor.velocity(RPM) * math.pi * self.wheel_diameter) / 60
+        ) / 12
+        self.speed = (left_speed_fts + right_speed_fts) / 2
 
-    def update_pose(self, dt: float):
+    def update_pose(self):
         while True:
             self.odometer(
                 self.left_motor.position(RotationUnits.REV),
                 self.right_motor.position(RotationUnits.REV),
                 math.radians(self.imu.heading()),
             )
-            wait(dt)
+            print(self.x, self.y, self.theta)
 
     def inverse(self, forward: float, omega: float) -> tuple[float, float]:
         vl = forward - ((omega * self.track_width) / 2)
@@ -120,6 +183,17 @@ class Drive:
         self.y_list = [y]
         self.theta_list = [theta]
 
+    def stop_drive(self):
+        self.left_motor.stop()
+        self.right_motor.stop()
+
+    def drive(self, forward, omega):
+        vl, vr = self.inverse(forward, omega)
+        vl_rpm = (vl * 60) / (2 * math.pi * drive.wheel_radius)
+        vr_rpm = (vr * 60) / (2 * math.pi * drive.wheel_radius)
+        self.left_motor.spin(FORWARD, vl_rpm, RPM)
+        self.right_motor.spin(FORWARD, vr_rpm, RPM)
+
 class Chaikin_Smooth:
     def __init__(self, points: list[Point]):
         self.points = points
@@ -147,27 +221,37 @@ class Pure_Pursuit_Controller:
         drive: Drive,
         forward_controller: PIDController,
         omega_controller: PIDController,
-        lookahead_distance: float,
         forward_velocity: float,
         distance_parameter: float,
         curvature_parameter: float,
+        max_lookahead: float,
+        min_lookahead: float,
     ):
         self.forward_controller = forward_controller
         self.omega_controller = omega_controller
         self.drive = drive
-        self.lookahead_distance = lookahead_distance
         self.forward_velocity = forward_velocity
         self.distance_parameter = distance_parameter
         self.curvature_parameter = curvature_parameter
         self.previous_curvature = 0
+        self.max_lookahead = max_lookahead
+        self.min_lookahead = min_lookahead
+        self.base_lookahead = 1
+
+    def clamp(self, value, min_value, max_value):
+        return max(min_value, min(value, max_value))
 
     def calculate(self, path: list[Point]):
-        self.lookahead_distance = (
-            self.lookahead_distance
-            + self.distance_parameter * self.drive.speed
-            - self.curvature_parameter * self.previous_curvature
-        )
         robot_pose = (self.drive.x, self.drive.y)
+        current_speed = abs(self.drive.speed)
+        curvature_scale = self.previous_curvature * self.curvature_parameter
+        lookahead = self.clamp(
+            self.base_lookahead
+            + (current_speed * self.distance_parameter)
+            - curvature_scale,
+            self.min_lookahead,
+            self.max_lookahead,
+        )
         path_points = [(point.point[0], point.point[1]) for point in path]
         theta = self.drive.theta
         distances = [
@@ -179,7 +263,7 @@ class Pure_Pursuit_Controller:
         for i in range(closest_idx, len(path_points)):
             p = path_points[i]
             dist = math.sqrt((p[0] - robot_pose[0]) ** 2 + (p[1] - robot_pose[1]) ** 2)
-            if dist >= self.lookahead_distance:
+            if dist >= lookahead:
                 lookahead_point = p
                 break
         dx = lookahead_point[0] - robot_pose[0]
@@ -191,53 +275,117 @@ class Pure_Pursuit_Controller:
         else:
             curvature = (2.0 * math.sin(alpha)) / dist
         self.previous_curvature = curvature
-        return curvature
+        return curvature, lookahead
 
-    def linspace_std(self, start, stop, num):
-        if num <= 0:
-            return []
-        if num == 1:
-            return [start]
-        step = (stop - start) / (num - 1)
-        return [start + i * step for i in range(num)]
-
-    def follow_path(self, path: list[Point], dt):
-        time_interval = self.linspace_std(0, 100, dt)
-        for t in time_interval:
-            curvature = self.calculate(path)
+    def follow_path(self, path: list[Point]):
+        bool_drive = True
+        while bool_drive:
+            curvature, _ = self.calculate(path)
             curvature_abs = abs(curvature)
             denominator = curvature_abs + 1e-6
             clip_value = 1 / denominator
             scaled_velocity = self.forward_velocity * max(0.5, min(1.0, clip_value))
-
-            vl, vr = self.drive.inverse(scaled_velocity, scaled_velocity * curvature)
-            vl_rpm = (vl * 60) / (2 * math.pi * drive.wheel_radius)
-            vr_rpm = (vr * 60) / (2 * math.pi * drive.wheel_radius)
-            drive.left_motor.spin(FORWARD, vl_rpm, RPM)
-            drive.right_motor.spin(FORWARD, vr_rpm, RPM)
+            scaled_omega = scaled_velocity*curvature
+            drive.drive(scaled_velocity,scaled_omega)
             dx = self.drive.x - path[-1].point[0]
             dy = self.drive.y - path[-1].point[1]
             distance_to_end = math.sqrt(dx**2 + dy**2)
-
-            if distance_to_end < 0.1:
+            print(distance_to_end)
+            if distance_to_end < 0.5:
+                bool_drive = False
+                self.drive.stop_drive()
                 break
-            wait(dt)
 
+class Node:
+    def __init__(self, value, cell_idx, cell_idy):
+        self.value = value
+        self.idx = cell_idx
+        self.idy = cell_idy
+        self.g = 0
+        self.h = 0
+        self.f = 0
+        self.parent = None
+        self.neighbors = []
+        visited = False
+
+    def __lt__(self, other):
+        return self.f < other.f
+
+    def __eq__(self, other):
+        return self.idx == other.idx and self.idy == other.idy
+    
+class AStar_Path_Follower:
+    def __init__(self, map_grid):
+        self.map_grid = map_grid
+        self.node_grid = [
+            [
+                Node(self.map_grid[row][col], row, col)
+                for col in range(len(self.map_grid[0]))
+            ]
+            for row in range(len(self.map_grid))
+        ]
+
+    def search_neighbor(self, grid, cell_i, cell_j):
+        offsets = [(1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1)]
+        neighbors = []
+        for x, y in offsets:
+            neighbor_x, neighbor_y = cell_i + x, cell_j + y
+            if 0 <= neighbor_x < len(grid) and 0 <= neighbor_y < len(grid[0]):
+                neighbors.append((grid[neighbor_x][neighbor_y]))
+        return neighbors
+
+    def reconstruct_path(self, end_node):
+        path = []
+        current = end_node
+        while current is not None:
+            path.append(Point(current.idx, current.idy))
+            current = current.parent
+        path.reverse()
+        return path
+
+    def find_path(self, start, end):
+        obstacle = 1
+        closed = []
+        open = [start]
+        heapify(open)
+        while len(open) > 0:
+            current_node = heappop(open)
+            if current_node == end:
+                return self.reconstruct_path(end)
+            closed.append(current_node)
+            children = self.search_neighbor(
+                self.node_grid, current_node.idx, current_node.idy
+            )
+            for child in children:
+                if child in closed or child.value == obstacle:
+                    continue
+                if child in open and child.g <= current_node.g:
+                    continue
+                child.g = current_node.g + math.hypot(
+                    child.idx - current_node.idx, child.idy - current_node.idy
+                )
+                child.h = math.hypot(end.idx - child.idx, end.idy - child.idy)
+                child.f = child.h + child.g
+                child.parent = current_node  # new code
+                if child not in open:
+                    heappush(open, child)
+
+        return None
+    
+    def find_path_dstar_lite(self):
+        pass
 
 brain = Brain()
 controller = Controller()
 drive = Drive(0, 0, 0, Ports.PORT1, Ports.PORT4, Ports.PORT3)
 pure_pursuit_controller = Pure_Pursuit_Controller(
-    drive, drive.pid_forward, drive.pid_omega, 5, 25, 0, 0
+    drive, drive.pid_forward, drive.pid_omega, 7.0, 3.0, 0.5, 3.0, 0.5
 )
-path = [Point(0, 0), Point(6, 30), Point(12, 60), Point(24, 70)]
+path = [Point(0, 0), Point(11, 0), Point(11, 9)]  # ft
 smooth = Chaikin_Smooth(path)
 smoothed_path = smooth.smooth_path(4)
 max_speed = 30
 max_omega = math.pi
-dt = 0.05
 
-odometry_thread = Thread(lambda: drive.update_pose(dt))
-path_following_thread = Thread(
-    lambda: pure_pursuit_controller.follow_path(smoothed_path, dt)
-)
+pure_pursuit_thread = Thread(lambda: pure_pursuit_controller.follow_path(smoothed_path))
+odometry_thread = Thread(drive.update_pose())
