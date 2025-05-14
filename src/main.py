@@ -1,6 +1,7 @@
 from vex import *
 import math
 
+
 def _siftdown(heap, startpos, pos):
     newitem = heap[pos]
     while pos > startpos:
@@ -13,24 +14,27 @@ def _siftdown(heap, startpos, pos):
         break
     heap[pos] = newitem
 
+
 def _siftup(heap, pos):
     endpos = len(heap)
     startpos = pos
     newitem = heap[pos]
-    childpos = 2*pos + 1
+    childpos = 2 * pos + 1
     while childpos < endpos:
         rightpos = childpos + 1
         if rightpos < endpos and not heap[childpos].f < heap[rightpos].f:
             childpos = rightpos
         heap[pos] = heap[childpos]
         pos = childpos
-        childpos = 2*pos + 1
+        childpos = 2 * pos + 1
     heap[pos] = newitem
     _siftdown(heap, startpos, pos)
 
+
 def heappush(heap, item):
     heap.append(item)
-    _siftdown(heap, 0, len(heap)-1)
+    _siftdown(heap, 0, len(heap) - 1)
+
 
 def heappop(heap):
     lastelt = heap.pop()
@@ -41,11 +45,13 @@ def heappop(heap):
         return returnitem
     return lastelt
 
+
 def heapify(heap):
     n = len(heap)
-    for i in reversed(range(n//2)):
+    for i in reversed(range(n // 2)):
         _siftup(heap, i)
-        
+
+
 class Point:
     def __init__(self, x: float, y: float):
         self.point = (x, y)
@@ -194,6 +200,7 @@ class Drive:
         self.left_motor.spin(FORWARD, vl_rpm, RPM)
         self.right_motor.spin(FORWARD, vr_rpm, RPM)
 
+
 class Chaikin_Smooth:
     def __init__(self, points: list[Point]):
         self.points = points
@@ -214,6 +221,7 @@ class Chaikin_Smooth:
             new_points.append(self.points[-1])
             self.points = new_points
         return self.points
+
 
 class Pure_Pursuit_Controller:
     def __init__(
@@ -285,8 +293,8 @@ class Pure_Pursuit_Controller:
             denominator = curvature_abs + 1e-6
             clip_value = 1 / denominator
             scaled_velocity = self.forward_velocity * max(0.5, min(1.0, clip_value))
-            scaled_omega = scaled_velocity*curvature
-            drive.drive(scaled_velocity,scaled_omega)
+            scaled_omega = scaled_velocity * curvature
+            drive.drive(scaled_velocity, scaled_omega)
             dx = self.drive.x - path[-1].point[0]
             dy = self.drive.y - path[-1].point[1]
             distance_to_end = math.sqrt(dx**2 + dy**2)
@@ -295,6 +303,7 @@ class Pure_Pursuit_Controller:
                 bool_drive = False
                 self.drive.stop_drive()
                 break
+
 
 class Node:
     def __init__(self, value, cell_idx, cell_idy):
@@ -313,7 +322,8 @@ class Node:
 
     def __eq__(self, other):
         return self.idx == other.idx and self.idy == other.idy
-    
+
+
 class AStar_Path_Follower:
     def __init__(self, map_grid):
         self.map_grid = map_grid
@@ -371,9 +381,10 @@ class AStar_Path_Follower:
                     heappush(open, child)
 
         return None
-    
+
     def find_path_dstar_lite(self):
         pass
+
 
 brain = Brain()
 controller = Controller()
