@@ -240,10 +240,8 @@ class Pure_Pursuit_Controller:
         self.drive = drive
         self.forward_velocity = forward_velocity
         self.distance_parameter = distance_parameter
-        self.previous_curvature = 0
         self.max_lookahead = max_lookahead
         self.min_lookahead = min_lookahead
-        self.base_lookahead = 1.5
 
     def clamp(self, value, min_value, max_value):
         return max(min_value, min(value, max_value))
@@ -252,7 +250,7 @@ class Pure_Pursuit_Controller:
         robot_pose = (self.drive.x, self.drive.y)
         current_speed = abs(self.drive.speed)
         lookahead = self.clamp(
-            self.base_lookahead + (current_speed * self.distance_parameter),
+            (current_speed * self.distance_parameter),
             self.min_lookahead,
             self.max_lookahead
         )
@@ -278,8 +276,7 @@ class Pure_Pursuit_Controller:
         if abs(dist) < 1e-10:
             curvature = 0.0
         else:
-            curvature = (2.0 * math.sin(alpha)) / dist
-        self.previous_curvature = curvature
+            curvature = (2.0 * math.sin(alpha)) / lookahead #use lookahead instead of dist
         return curvature, lookahead
 
     def velocity_scaler(self, curvature: float, max_speed: float, max_omega: float):
@@ -411,7 +408,7 @@ pure_pursuit_controller = Pure_Pursuit_Controller(
     forward_velocity=(0.5)*12,
     distance_parameter=0.1,
     max_lookahead=5.0,
-    min_lookahead=1.0)
+    min_lookahead=1.5)
 
 path = [Point(0, 0), Point(4, 0), Point(8, 8)]  # ft
 smooth = Chaikin_Smooth(path)

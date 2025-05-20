@@ -175,6 +175,17 @@ class Pure_Pursuit_Controller:
         self.curvature_parameter = curvature_parameter
         self.previous_curvature = 0
 
+    def compute_intersection_circle(self, path: list[Point], lookahead):
+        robot_pose = (self.drive.x, self.drive.y)
+        for i in range(len(path) - 1):
+            first_point = path[i].point
+            second_point = path[i+1].point
+            dx = second_point[0] - first_point[0]
+            dy = second_point[1] - first_point[1]
+            a = dx**2 + dy**2
+            b = 2 * (dx * (first_point[0] - robot_pose[0]) + dy * (first_point[1] - robot_pose[1]))
+            c = (first_point[0] - robot_pose[0])**2 + (first_point[1] - robot_pose[1])**2 - lookahead**2
+
     def calculate(self, path: list[Point]):
         self.lookahead_distance = (
             self.lookahead_distance
