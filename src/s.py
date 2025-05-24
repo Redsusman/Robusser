@@ -4,7 +4,6 @@ import keyboard
 import time
 import math
 # import heapq
-import cv2
 from matplotlib.animation import FuncAnimation
 
 def _siftdown(heap, startpos, pos):
@@ -81,13 +80,14 @@ class PIDController:
 
 
 class Drive:
-    def __init__(self, x, y, theta, track_width):
+    def __init__(self, x, y, theta, track_width, wheel_base):
         self.pid_forward = PIDController(0.1, 0.0, 0.0)
         self.pid_omega = PIDController(5.0, 0.0, 0.0)
         self.x = x
         self.y = y
         self.theta = theta
         self.track_width = track_width
+        self.wheel_base = wheel_base
         self.speed = 0
         self.omega = 0
         self.x_list = []
@@ -185,6 +185,14 @@ class Pure_Pursuit_Controller:
             a = dx**2 + dy**2
             b = 2 * (dx * (first_point[0] - robot_pose[0]) + dy * (first_point[1] - robot_pose[1]))
             c = (first_point[0] - robot_pose[0])**2 + (first_point[1] - robot_pose[1])**2 - lookahead**2
+            discriminant = b**2 - 4 * a * c
+            if discriminant < 0:
+                continue
+            t = (-b - math.sqrt(discriminant)) / (2 * a)
+            if 0 <= t <= 1:
+                intersection_x = first_point[0] + t * dx
+                intersection_y = first_point[1] + t * dy
+                return (intersection_x, intersection_y)
 
     def calculate(self, path: list[Point]):
         self.lookahead_distance = (
@@ -193,30 +201,53 @@ class Pure_Pursuit_Controller:
             - self.curvature_parameter * self.previous_curvature
         )
         robot_pose = (self.drive.x, self.drive.y)
-        path_points = [(point.point[0], point.point[1]) for point in path]
         theta = self.drive.theta
-        distances = [
-            math.sqrt((p[0] - robot_pose[0]) ** 2 + (p[1] - robot_pose[1]) ** 2)
-            for p in path_points
-        ]
-        closest_idx = min(range(len(distances)), key=lambda i: distances[i])
-        lookahead_point = path_points[-1]
-        for i in range(closest_idx, len(path_points)):
-            p = path_points[i]
-            dist = math.sqrt((p[0] - robot_pose[0]) ** 2 + (p[1] - robot_pose[1]) ** 2)
-            if dist >= self.lookahead_distance:
-                lookahead_point = p
-                break
+        lookahead_point = self.compute_intersection_circle(path, self.lookahead_distance)
+        if lookahead_point is None:
+            return 0.0
         dx = lookahead_point[0] - robot_pose[0]
         dy = lookahead_point[1] - robot_pose[1]
         alpha = math.atan2(dy, dx) - theta
+        alpha = math.atan2(math.sin(alpha), math.cos(alpha))
         dist = math.sqrt(dx**2 + dy**2)
         if abs(dist) < 1e-10:
             curvature = 0.0
         else:
             curvature = (2.0 * math.sin(alpha)) / dist
-        self.previous_curvature = curvature
         return curvature
+        
+
+    # def calculate(self, path: list[Point]):
+    #     self.lookahead_distance = (
+    #         self.lookahead_distance
+    #         + self.distance_parameter * self.drive.speed
+    #         - self.curvature_parameter * self.previous_curvature
+    #     )
+    #     robot_pose = (self.drive.x, self.drive.y)
+    #     path_points = [(point.point[0], point.point[1]) for point in path]
+    #     theta = self.drive.theta
+    #     distances = [
+    #         math.sqrt((p[0] - robot_pose[0]) ** 2 + (p[1] - robot_pose[1]) ** 2)
+    #         for p in path_points
+    #     ]
+    #     closest_idx = min(range(len(distances)), key=lambda i: distances[i])
+    #     lookahead_point = path_points[-1]
+    #     for i in range(closest_idx, len(path_points)):
+    #         p = path_points[i]
+    #         dist = math.sqrt((p[0] - robot_pose[0]) ** 2 + (p[1] - robot_pose[1]) ** 2)
+    #         if dist >= self.lookahead_distance:
+    #             lookahead_point = p
+    #             break
+    #     dx = lookahead_point[0] - robot_pose[0]
+    #     dy = lookahead_point[1] - robot_pose[1]
+    #     alpha = math.atan2(dy, dx) - theta
+    #     dist = math.sqrt(dx**2 + dy**2)
+    #     if abs(dist) < 1e-10:
+    #         curvature = 0.0
+    #     else:
+    #         curvature = (2.0 * math.sin(alpha)) / dist
+    #     self.previous_curvature = curvature
+    #     return curvature
     # def calculate(self, path: list[Point]):
     #     self.lookahead_distance = (
     #         self.lookahead_distance
@@ -259,6 +290,100 @@ class Pure_Pursuit_Controller:
                 < 0.1
             ):
                 break
+
+class Stanley_Controller:
+    def __init__(self, drive: Drive, k: float, vel, lookahead):
+        self.drive = drive
+        self.k = k
+        self.vel = vel
+        self.lookahead = lookahead
+        self.speed_controller = PIDController(2.0,0.0,0)
+        self.cte_controller = PIDController(2.0,0,0)
+        self.theta_controller = PIDController(1,0,0)
+        pass
+    
+    def calculate(self, path: list[Point]):
+        robot_pose = (self.drive.x, self.drive.y)
+        theta = self.drive.theta
+        distances = [math.hypot(p.point[0] - robot_pose[0], p.point[1] - robot_pose[1]) for p in path]
+        closest_idx = distances.index(min(distances))
+        shortest_point = path[closest_idx]
+        next_point = path[closest_idx + 1] if closest_idx + 1 < len(path) else shortest_point
+        dx = next_point.point[0] - shortest_point.point[0]
+        dy = next_point.point[1] - shortest_point.point[1]
+        path_heading = math.atan2(dy, dx)
+        heading_error = math.atan2(math.sin(path_heading - theta), math.cos(path_heading - theta))
+        rx = robot_pose[0] - shortest_point.point[0]
+        ry = robot_pose[1] - shortest_point.point[1]
+        cross_track_error = rx * math.sin(path_heading) - ry * math.cos(path_heading)
+        v = max(self.drive.speed, 0.1)
+        steering_angle = heading_error + math.atan((self.k * cross_track_error) / v)
+        steering_radius = self.drive.wheel_base / (math.tan(steering_angle) + 1e-6)
+
+        return steering_radius
+
+    def calculate_feedback(self, path: list[Point], heading_kP, cte_kP, dist_kP):
+        robot_pose = (self.drive.x, self.drive.y)
+        theta = self.drive.theta
+        distances = [math.hypot(p.point[0] - robot_pose[0], p.point[1] - robot_pose[1]) for p in path]
+        closest_idx = distances.index(min(distances))
+        shortest_point = path[closest_idx]
+        next_point = path[closest_idx + 1] if closest_idx + 1 < len(path) else shortest_point
+        dx = next_point.point[0] - shortest_point.point[0]
+        dy = next_point.point[1] - shortest_point.point[1]
+        path_heading = math.atan2(dy, dx)
+        heading_error = math.atan2(math.sin(path_heading - theta), math.cos(path_heading - theta))
+        rx = robot_pose[0] - shortest_point.point[0]
+        ry = robot_pose[1] - shortest_point.point[1]
+        cross_track_error = rx * math.sin(path_heading) - ry * math.cos(path_heading)
+        v = max(self.drive.speed, 0.1)
+        steering_angle = heading_error + math.atan((self.k * cross_track_error) / v)
+        steering_radius = self.drive.wheel_base / (math.tan(steering_angle) + 1e-6)
+        dist_error = math.hypot(shortest_point.point[0]-robot_pose[0], shortest_point.point[1] - robot_pose[1])
+
+        # heading_correction = heading_kP*heading_error
+        # cte_correction = cte_kP*cross_track_error
+        # dist_correction = dist_kP*dist_error
+        heading_correction = -self.theta_controller.compute(heading_error, 0,0.01)
+        cte_correction = -self.cte_controller.compute(heading_error, 0,0.01)
+        dist_correction = self.speed_controller.compute(heading_error, 0,0.01)
+        
+
+        return dist_correction, cte_correction+heading_correction
+
+    def follow_path_feedback(self, path: list[Point],heading_kP, cte_kP, dist_kP):
+        dt = 0.1
+        for t in range(1000):
+            dist_correction, omega = self.calculate_feedback(path,heading_kP, cte_kP, dist_kP)
+            v = 0.5+dist_correction
+            vl, vr = self.drive.inverse(v, omega)
+            print(v,omega)
+            self.drive.forward(vl, vr, dt)
+            if (
+                np.linalg.norm(
+                    np.array([self.drive.x, self.drive.y]) - np.array(path[-1].point)
+                )
+                < 0.5
+            ):
+                break
+    
+    def follow_path(self, path: list[Point]):
+        dt = 0.1
+        for t in range(1000):
+            radius = self.calculate(path)
+            # scaled_velocity = self.vel * np.clip(
+            #     1 / (abs(curvature) + 1e-6), 0.5, 1
+            # )
+            vl, vr = self.drive.inverse(self.vel, self.vel/(radius + 1e-7))
+            self.drive.forward(vl, vr, dt)
+            if (
+                np.linalg.norm(
+                    np.array([self.drive.x, self.drive.y]) - np.array(path[-1].point)
+                )
+                < 0.1
+            ):
+                break
+
 
 class Node:
     def __init__(self, value, cell_idx, cell_idy):
@@ -434,6 +559,44 @@ class DWA_Controller:
         return grid_x, grid_y
 
 
+# Ramer-Douglas-Peucker Algorithm
+def simplify_path(points, epsilon):
+    """Ramer-Douglas-Peucker path simplification for Point class"""
+    if len(points) < 3:
+        return points.copy()
+    
+    # Find point with maximum distance
+    dmax = 0
+    index = 0
+    end = len(points) - 1
+    
+    for i in range(1, end):
+        d = perpendicular_distance(points[i], points[0], points[end])
+        if d > dmax:
+            index = i
+            dmax = d
+    
+    # If max distance > epsilon, recursively simplify
+    if dmax > epsilon:
+        left = simplify_path(points[:index+1], epsilon)
+        right = simplify_path(points[index:], epsilon)
+        return left[:-1] + right
+    else:
+        return [points[0], points[end]]
+
+def perpendicular_distance(point, line_start, line_end):
+    """Calculate perpendicular distance from Point to line segment"""
+    x, y = point.point
+    x1, y1 = line_start.point
+    x2, y2 = line_end.point
+    
+    if x1 == x2 and y1 == y2:
+        return math.hypot(x-x1, y-y1)
+    
+    numerator = abs((x2-x1)*(y1-y) - (x1-x)*(y2-y1))
+    denominator = math.hypot(x2-x1, y2-y1)
+    return numerator / denominator
+
 class USB_Server_Communicator:
     def __init__(self):
         self.port = None
@@ -465,7 +628,7 @@ class Potential_Field_Method:
     def calculate_potential(self, path, obstacles):
         pass
 
-drive = Drive(0,0,0,10)
+drive = Drive(0,0,0,2,3)
 # import keyboard
 
 # drive = Drive(0, 0, 1.57, 10)
@@ -555,24 +718,29 @@ dwa = DWA_Controller(1.0, 0.5, math.pi, 0.05, 2, 0.1, 0.1, 0.1, 0.2)
 
 # Define start and end nodes
 start = astar.node_grid[0][0]  # Top-left corner
-end = astar.node_grid[22][5]  # Bottom-right corner
+end = astar.node_grid[16][18]  # Bottom-right corner
 
 # Find the path
-path = astar.find_path(start, end)
-# # plot grid:
-node_grid = astar.node_grid
-colors = ["red" if node.value == 1 else "blue" for row in node_grid for node in row]
+# path = astar.find_path(start, end)
+# if path is not None:
+#     simplified_path = simplify_path(path, 0.45)
+# else:
+#     simplified_path = []
+# # # plot grid:
+# node_grid = astar.node_grid
+# colors = ["red" if node.value == 1 else "blue" for row in node_grid for node in row]
 
-# Extract x and y coordinates
-x_grid = [node.idx for row in node_grid for node in row]
-y_grid = [node.idy for row in node_grid for node in row]
+# # Extract x and y coordinates
+# x_grid = [node.idx for row in node_grid for node in row]
+# y_grid = [node.idy for row in node_grid for node in row]
 
-# Plot the grid nodes with colors
-plt.scatter(x_grid, y_grid, c=colors, label="Grid Nodes", alpha=0.5)
-plt.xlabel("X")
-plt.ylabel("Y")
-plt.legend()
-# path = [Point(0, 0), Point(4,0), Point(8,8)]
+# # Plot the grid nodes with colors
+# plt.scatter(x_grid, y_grid, c=colors, label="Grid Nodes", alpha=0.5)
+# plt.xlabel("X")
+# plt.ylabel("Y")
+# plt.legend()
+
+path = [Point(0,0), Point(5,0), Point(5,4)]
 if path:
     x = [point.x for point in path]
     y = [point.y for point in path]
@@ -587,13 +755,13 @@ dt = 0.01
 # # left_speed = 0
 # # right_speed = 0
 
-control = Pure_Pursuit_Controller(
-    drive, PIDController(1, 0, 0), PIDController(1, 0, 0), 1.0, 1, 0.005,0.0005
+control = Stanley_Controller(
+    drive=drive, k=5, vel=0.0, lookahead = 0.5
 )
 if path is not None:
     smoother = Chaikin_Smooth(path)
-    smoothed_path = smoother.smooth_path(2)
-    control.follow_path(smoothed_path)
+    smoothed_path = smoother.smooth_path(4)
+    control.follow_path_feedback(smoothed_path,2.0,2.0,0.0)
 else:
     print("No valid path found. Cannot proceed with smoothing or following.")
 plt.plot(

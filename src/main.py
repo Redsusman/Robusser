@@ -1,6 +1,8 @@
 from vex import *
 import math
 
+def hypot(x, y):
+    return math.sqrt(x**2 + y**2)
 
 def _siftdown(heap, startpos, pos):
     newitem = heap[pos]
@@ -96,9 +98,9 @@ class Drive:
         right_motor_port: int,
         imu_port: int,
     ):
-        self.track_width = 16.625
-        self.wheel_base = 16.125
-        self.wheel_diameter = 4
+        self.track_width = 16.625/12
+        self.wheel_base = 16.125/12
+        self.wheel_diameter = 4/12
         self.wheel_radius = self.wheel_diameter / 2
         self.left_motor = Motor(left_motor_port)
         self.right_motor = Motor(right_motor_port)
@@ -108,7 +110,7 @@ class Drive:
         self.imu.set_turn_type(TurnType.LEFT)
         self.x = x
         self.y = y
-        self.theta = math.radians(self.imu.heading())
+        self.theta = 0.0
         self.speed = 0
         self.omega = 0
         self.previous_distance = 0
@@ -126,8 +128,8 @@ class Drive:
             DistanceUnits.IN,
         )
 
-    def hypot(self, x, y):
-        return math.sqrt(x**2 + y**2)
+
+    
 
     def forward(self, left_speed: float, right_speed: float):
         speed = (right_speed + left_speed) / 2
@@ -140,14 +142,18 @@ class Drive:
         right_encoder_rev: float,
         gyro_angle: float,
     ):
-        left_distance = (left_encoder_rev * 2 * math.pi * self.wheel_radius) / 12
-        right_distance = (right_encoder_rev * 2 * math.pi * self.wheel_radius) / 12
+        left_distance = (left_encoder_rev * 2 * math.pi * self.wheel_radius)
+        right_distance = (right_encoder_rev * 2 * math.pi * self.wheel_radius)
         distance = (left_distance + right_distance) / 2
         delta_distance = distance - self.previous_distance
         self.theta = gyro_angle
         self.x += delta_distance * math.cos(gyro_angle)
         self.y += delta_distance * math.sin(gyro_angle)
+
         self.previous_distance = distance
+        # print(left_distance, right_distance)
+        # 
+
         self.speed = (
             self.left_motor.velocity(RPM) + self.right_motor.velocity(RPM)
         ) / 2
@@ -166,8 +172,15 @@ class Drive:
                 self.right_motor.position(RotationUnits.REV),
                 math.radians(self.imu.heading()),
             )
-            # print(self.x, self.y, self.theta)
-            # print(self.imu.heading())
+            print("x: ", self.x, "y: ", self.y, "theta: ", self.theta)
+            # # print(self.imu.heading())
+    def update_pose_static(self):
+        self.odometer(
+            self.left_motor.position(RotationUnits.REV),
+            self.right_motor.position(RotationUnits.REV),
+            math.radians(self.imu.heading()),
+        )
+        
 
     def inverse(self, forward: float, omega: float) -> tuple[float, float]:
         vl = forward - ((omega * self.track_width) / 2)
@@ -191,21 +204,24 @@ class Drive:
 
     def drive(self, forward, omega):
         vl, vr = self.inverse(forward, omega)
-        vl_rpm = (vl * 60) / (2 * math.pi * drive.wheel_radius)
-        vr_rpm = (vr * 60) / (2 * math.pi * drive.wheel_radius)
+        vl_rpm = (vl * 60) / (2 * math.pi * self.wheel_radius)
+        vr_rpm = (vr * 60) / (2 * math.pi * self.wheel_radius)
         self.left_motor.spin(FORWARD, vl_rpm, RPM)
         self.right_motor.spin(FORWARD, vr_rpm, RPM)
+        # print(vl_rpm, vr_rpm, self.left_motor.velocity(), self.right_motor.velocity())
 
-    def smart_drive(self, forward, omega):
-        vl, vr = self.inverse(forward, omega)
-        vl_rpm = (vl * 60) / (2 * math.pi * drive.wheel_radius)
-        vr_rpm = (vr * 60) / (2 * math.pi * drive.wheel_radius)
-        vel = (vl_rpm + vr_rpm) / 2
-        omega = (vr_rpm - vl_rpm) / self.track_width
-        self.drivetrain.drive(FORWARD, vel, RPM)
-        self.drivetrain.set_turn_velocity(omega, RPM)
+    def drive_to_angle(self, angle):
+        self.drivetrain.set_heading(angle)
 
-
+    # def smart_drive(self, forward, omega):
+    #     vl, vr = self.inverse(forward, omega)
+    #     vl_rpm = (vl * 60) / (2 * math.pi * drive.wheel_radius)
+    #     vr_rpm = (vr * 60) / (2 * math.pi * drive.wheel_radius)
+    #     vel = (vl_rpm + vr_rpm) / 2
+    #     omega = (vr_rpm - vl_rpm) / self.track_width
+    #     self.drivetrain.turn(LEFT,omega*20, RPM)
+    #     self.drivetrain.drive(FORWARD, vel, RPM)
+      
 class Chaikin_Smooth:
     def __init__(self, points: list[Point]):
         self.points = points
@@ -245,7 +261,42 @@ class Pure_Pursuit_Controller:
 
     def clamp(self, value, min_value, max_value):
         return max(min_value, min(value, max_value))
+    
+    # def compute_intersection_circle(self, path: list[Point]):
+    #     robot_pose = (self.drive.x, self.drive.y)
+    #     theta = self.drive.theta
+    #     eading_vec =[math.cos(theta), math.sin(theta)]
 
+    #     for i in range(len(path) - 1):
+    #         first_point = path[i].point
+    #         second_point = path[i + 1].point
+    #         dx = second_point[0] - first_point[0]
+    #         dy = second_point[1] - first_point[1]
+    #         a = dx**2 + dy**2
+    #         b = 2 * (
+    #             dx * (first_point[0] - robot_pose[0])
+    #             + dy * (first_point[1] - robot_pose[1])
+    #         )
+    #         c = (
+    #             (first_point[0] - robot_pose[0])**2 +
+    #             (first_point[1] - robot_pose[1])**2 -
+    #             self.min_lookahead**2
+    #         )
+    #         discriminant = b**2 - 4 * a * c
+    #         if discriminant < 0:
+    #             continue
+
+    #         sqrt_d = math.sqrt(discriminant)
+    #         for t in [(-b - sqrt_d) / (2 * a), (-b + sqrt_d) / (2 * a)]:
+    #             if 0 <= t <= 1:
+    #                 point = [first_point[0] + t * dx, first_point[1] + t * dy]
+    #                 vec_to_point = [point[0] - robot_pose[0], point[1] - robot_pose[1]]
+    #                 if np.dot(vec_to_point, heading_vec) > 0:
+    #                     return point[0], point[1]  # Point is in front
+
+    #     return None
+
+    
     def calculate(self, path: list[Point]):
         robot_pose = (self.drive.x, self.drive.y)
         current_speed = abs(self.drive.speed)
@@ -254,6 +305,7 @@ class Pure_Pursuit_Controller:
             self.min_lookahead,
             self.max_lookahead
         )
+        # lookahead = self.min_lookahead
         path_points = [(point.point[0], point.point[1]) for point in path]
         theta = self.drive.theta
         distances = [
@@ -276,7 +328,7 @@ class Pure_Pursuit_Controller:
         if abs(dist) < 1e-10:
             curvature = 0.0
         else:
-            curvature = (2.0 * math.sin(alpha)) / lookahead #use lookahead instead of dist
+            curvature = (2.0 * math.sin(alpha)) / dist #use lookahead instead of dist
         return curvature, lookahead
 
     def velocity_scaler(self, curvature: float, max_speed: float, max_omega: float):
@@ -291,24 +343,27 @@ class Pure_Pursuit_Controller:
 
     def follow_path(self, path: list[Point]):
         bool_drive = True
+        # speed = 0.0
         while bool_drive:
+            # self.drive.update_pose_static()
             curvature, lookahead = self.calculate(path)
-            current_max_speed = self.velocity_scaler(
-                curvature, self.forward_velocity, max_omega
-            )
-            if not hasattr(self, "current_speed"):
-                self.current_speed = 0.0
-            acceleration = 1.0
-            if current_max_speed > self.current_speed:
-                self.current_speed = min(
-                    self.current_speed + acceleration * 0.02, current_max_speed
-                )
-            else:
-                self.current_speed = max(
-                    self.current_speed - acceleration * 0.02, current_max_speed
-                )
-            scaled_omega = self.current_speed * curvature
-            drive.drive(self.current_speed, scaled_omega)
+            # current_speed = self.drive.speed
+            # speed = self.velocity_scaler(
+            #     curvature, current_speed, max_omega
+            # )
+            # if not hasattr(self, "current_speed"):
+            #     speed = 0.0
+            # acceleration = 1.0
+            # if current_max_speed > current_speed:
+            #     speed = min(
+            #         current_speed + acceleration * 0.02, current_max_speed
+            #     )
+            # else:
+            #     speed = max(
+            #         current_speed - acceleration * 0.02, current_max_speed
+            #     )
+            scaled_omega = self.forward_velocity * curvature
+            self.drive.drive(self.forward_velocity, scaled_omega)
             dx = self.drive.x - path[-1].point[0]
             dy = self.drive.y - path[-1].point[1]
             distance_to_end = math.sqrt(dx**2 + dy**2)
@@ -318,6 +373,96 @@ class Pure_Pursuit_Controller:
                 self.drive.stop_drive()
                 break
 
+class Stanley_Controller:
+    def __init__(self, drive: Drive, k: float, vel, lookahead):
+        self.drive = drive
+        self.k = k
+        self.vel = vel
+        self.lookahead = lookahead
+        pass
+    
+    def calculate(self, path: list[Point]):
+        robot_pose = (self.drive.x, self.drive.y)
+        # print(robot_pose)
+        theta = self.drive.theta
+        distances = [hypot(p.point[0] - robot_pose[0], p.point[1] - robot_pose[1]) for p in path]
+        closest_idx = distances.index(min(distances))
+    
+        shortest_point = path[closest_idx]
+        next_point = path[closest_idx + 1] if closest_idx + 1 < len(path) else shortest_point
+        dx = next_point.point[0] - shortest_point.point[0]
+        dy = next_point.point[1] - shortest_point.point[1]
+        path_heading = math.atan2(dy, dx)
+        heading_error = math.atan2(math.sin(path_heading - theta), math.cos(path_heading - theta))
+        rx = robot_pose[0] - shortest_point.point[0]
+        ry = robot_pose[1] - shortest_point.point[1]
+        cross_track_error = rx * math.sin(path_heading) - ry * math.cos(path_heading)
+        v = max(self.drive.speed, 0.1)
+        steering_angle = heading_error + math.atan((self.k * cross_track_error) / v)
+        steering_radius = self.drive.wheel_base / (math.tan(steering_angle) + 1e-6)
+        return steering_radius, steering_angle
+
+    
+    def follow_path(self, path: list[Point]):
+        bool = True
+        while bool:
+            # self.drive.update_pose_static()
+            radius, steering_angle = self.calculate(path)
+            # scaled_velocity = self.vel * np.clip(
+            #     1 / (abs(curvature) + 1e-6), 0.5, 1
+            # )
+            self.drive.drive(self.vel, steering_angle)
+            dx = self.drive.x - path[-1].point[0]
+            dy = self.drive.y - path[-1].point[1]
+            distance_to_end = math.sqrt(dx**2 + dy**2)
+            if distance_to_end < 0.5:  # Smaller threshold for more precise stopping
+                bool_drive = False
+                self.drive.stop_drive()
+                break
+
+    def calculate_feedback(self, path: list[Point], heading_kP, cte_kP, dist_kP):
+        robot_pose = (self.drive.x, self.drive.y)
+        theta = self.drive.theta
+        distances = [hypot(p.point[0] - robot_pose[0], p.point[1] - robot_pose[1]) for p in path]
+        closest_idx = distances.index(min(distances))
+        shortest_point = path[closest_idx]
+        next_point = path[closest_idx + 1] if closest_idx + 1 < len(path) else shortest_point
+        dx = next_point.point[0] - shortest_point.point[0]
+        dy = next_point.point[1] - shortest_point.point[1]
+        path_heading = math.atan2(dy, dx)
+        heading_error = math.atan2(math.sin(path_heading - theta), math.cos(path_heading - theta))
+        rx = robot_pose[0] - shortest_point.point[0]
+        ry = robot_pose[1] - shortest_point.point[1]
+        cross_track_error = rx * math.sin(path_heading) - ry * math.cos(path_heading)
+        v = max(self.drive.speed, 0.1)
+        steering_angle = heading_error + math.atan((self.k * cross_track_error) / v)
+        steering_radius = self.drive.wheel_base / (math.tan(steering_angle) + 1e-6)
+        dist_error = hypot(shortest_point.point[0]-robot_pose[0], shortest_point.point[1] - robot_pose[1])
+
+        heading_correction = heading_kP*heading_error
+        cte_correction = cte_kP*cross_track_error
+        dist_correction = dist_kP*dist_error
+
+        print(cte_correction+heading_correction)
+        return dist_correction, cte_correction+heading_correction
+
+    def follow_path_feedback(self, path: list[Point],heading_kP, cte_kP, dist_kP):
+        bool_drive = True
+        while bool_drive:
+            self.drive.update_pose_static()
+            dist_correction, omega = self.calculate_feedback(path,heading_kP, cte_kP, dist_kP)
+            v = self.vel+dist_correction
+            # vl, vr = self.drive.inverse(v, omega)
+            self.drive.drive(v, omega)
+            dx = self.drive.x - path[-1].point[0]
+            dy = self.drive.y - path[-1].point[1]
+            distance_to_end = math.sqrt(dx**2 + dy**2)
+            # print(vl, vr, self.drive.left_motor.velocity(), self.drive.right_motor.velocity())
+
+            if distance_to_end < 0.5:  # Smaller threshold for more precise stopping
+                bool_drive = False
+                self.drive.stop_drive()
+                break
 
 class Node:
     def __init__(self, value, cell_idx, cell_idy):
@@ -385,10 +530,10 @@ class AStar_Path_Follower:
                     continue
                 if child in open and child.g <= current_node.g:
                     continue
-                child.g = current_node.g + math.hypot(
+                child.g = current_node.g + hypot(
                     child.idx - current_node.idx, child.idy - current_node.idy
                 )
-                child.h = math.hypot(end.idx - child.idx, end.idy - child.idy)
+                child.h = hypot(end.idx - child.idx, end.idy - child.idy)
                 child.f = child.h + child.g
                 child.parent = current_node  # new code
                 if child not in open:
@@ -399,66 +544,82 @@ class AStar_Path_Follower:
     def find_path_dstar_lite(self):
         pass
 
+class Elevator:
+    def __init__(self, brain: Brain):
+        self.pneumatic = Pneumatics(brain.three_wire_port.g)
+
+    def up(self):
+        self.pneumatic.close()
+
+    def down(self):
+        self.pneumatic.open()
+
+
+
 
 brain = Brain()
 controller = Controller()
 drive = Drive(0, 0, 0, Ports.PORT1, Ports.PORT4, Ports.PORT3)
-pure_pursuit_controller = Pure_Pursuit_Controller(
-    drive=drive,
-    forward_velocity=(0.5)*12,
-    distance_parameter=0.1,
-    max_lookahead=5.0,
-    min_lookahead=1.5)
+control = Stanley_Controller(drive, 2.0, 0.5,0.0)
+controllerr = Pure_Pursuit_Controller(drive, 0.5, 0.5, 5.0, 1.5)
+elevator = Elevator(brain)
 
-path = [Point(0, 0), Point(4, 0), Point(8, 8)]  # ft
+# controller.buttonA.pressed(lambda: elevator.up())
+# controller.buttonB.pressed(lambda: elevator.down())
+path = [Point(0,0), Point(7,0), Point(7,-5)]  # ft
 smooth = Chaikin_Smooth(path)
-smoothed_path = smooth.smooth_path(4)
+smoothed_path = smooth.smooth_path(3)
 max_speed = 30
 max_omega = math.pi
 
-pure_pursuit_thread = Thread(lambda: pure_pursuit_controller.follow_path(smoothed_path))
+def run():
+    control.follow_path_feedback(smoothed_path,2.5,2.5,0)
+    elevator.down()
+
+# pure_pursuit_thread = Thread(lambda: controllerr.follow_path(smoothed_path))
+stanley_thread = Thread(lambda: run())
 odometry_thread = Thread(drive.update_pose())
 
-grid = [
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1],
-    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0],
-    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-    [1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1],
-    [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-    [1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1],
-    [1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-]
+# grid = [
+#     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+#     [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+#     [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+#     [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+#     [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+#     [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+#     [1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1],
+#     [1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1],
+#     [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+#     [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+#     [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0],
+#     [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+#     [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+#     [1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1],
+#     [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+#     [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+#     [1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+#     [1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1],
+#     [1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
+#     [1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
+#     [1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+#     [1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+#     [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+#     [1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
+#     [1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
+#     [1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
+#     [1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
+#     [1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+#     [1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+#     [1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+# ]
 
 
-# left_motor = Motor(Ports.PORT1)
-# right_motor = Motor(Ports.PORT4)
-# controller = Controller()
+# # left_motor = Motor(Ports.PORT1)
+# # right_motor = Motor(Ports.PORT4)
+# # controller = Controller()
 
-# while True:
-#     if controller.buttonR1.pressing():
-#         left_motor.spin(FORWARD, 100, PERCENT)
-#         right_motor.spin(FORWARD, 100, PERCENT)
+# # while True:
+# #     if controller.buttonR1.pressing():
+# #         left_motor.spin(FORWARD, 100, PERCENT)
+# #         right_motor.spin(FORWARD, 100, PERCENT)
