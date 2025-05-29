@@ -1,9 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import keyboard
-import time
 import math
-# import heapq
 from matplotlib.animation import FuncAnimation
 
 def _siftdown(heap, startpos, pos):
@@ -332,21 +329,24 @@ class Stanley_Controller:
         dx = next_point.point[0] - shortest_point.point[0]
         dy = next_point.point[1] - shortest_point.point[1]
         path_heading = math.atan2(dy, dx)
-        heading_error = math.atan2(math.sin(path_heading - theta), math.cos(path_heading - theta))
+        heading_error = path_heading-theta
+        heading_error = math.atan2(math.sin(heading_error), math.cos(heading_error))
         rx = robot_pose[0] - shortest_point.point[0]
         ry = robot_pose[1] - shortest_point.point[1]
         cross_track_error = rx * math.sin(path_heading) - ry * math.cos(path_heading)
-        v = max(self.drive.speed, 0.1)
-        steering_angle = heading_error + math.atan((self.k * cross_track_error) / v)
-        steering_radius = self.drive.wheel_base / (math.tan(steering_angle) + 1e-6)
+        # v = max(self.drive.speed, 0.1)
+        # steering_angle = heading_error + math.atan((self.k * cross_track_error) / v)
+        # steering_radius = self.drive.wheel_base / (math.tan(steering_angle) + 1e-6)
         dist_error = math.hypot(shortest_point.point[0]-robot_pose[0], shortest_point.point[1] - robot_pose[1])
 
-        # heading_correction = heading_kP*heading_error
-        # cte_correction = cte_kP*cross_track_error
-        # dist_correction = dist_kP*dist_error
-        heading_correction = -self.theta_controller.compute(heading_error, 0,0.01)
-        cte_correction = -self.cte_controller.compute(heading_error, 0,0.01)
-        dist_correction = self.speed_controller.compute(heading_error, 0,0.01)
+        heading_correction = heading_kP*heading_error
+        cte_correction = cte_kP*cross_track_error
+        dist_correction = dist_kP*dist_error
+
+        print(cte_correction, dist_correction)
+        # heading_correction = -self.theta_controller.compute(heading_error, 0,0.01)
+        # cte_correction = -self.cte_controller.compute(heading_error, 0,0.01)
+        # dist_correction = self.speed_controller.compute(heading_error, 0,0.01)
         
 
         return dist_correction, cte_correction+heading_correction
@@ -357,7 +357,7 @@ class Stanley_Controller:
             dist_correction, omega = self.calculate_feedback(path,heading_kP, cte_kP, dist_kP)
             v = 0.5+dist_correction
             vl, vr = self.drive.inverse(v, omega)
-            print(v,omega)
+            # print(v,omega)
             self.drive.forward(vl, vr, dt)
             if (
                 np.linalg.norm(
@@ -628,7 +628,7 @@ class Potential_Field_Method:
     def calculate_potential(self, path, obstacles):
         pass
 
-drive = Drive(0,0,0,2,3)
+
 # import keyboard
 
 # drive = Drive(0, 0, 1.57, 10)
@@ -717,30 +717,31 @@ astar = AStar_Path_Follower(grid)
 dwa = DWA_Controller(1.0, 0.5, math.pi, 0.05, 2, 0.1, 0.1, 0.1, 0.2)
 
 # Define start and end nodes
-start = astar.node_grid[0][0]  # Top-left corner
-end = astar.node_grid[16][18]  # Bottom-right corner
+start = astar.node_grid[0][22]  # Top-left corner
+end = astar.node_grid[6][8]  # Bottom-right corner
 
 # Find the path
-# path = astar.find_path(start, end)
-# if path is not None:
-#     simplified_path = simplify_path(path, 0.45)
-# else:
-#     simplified_path = []
-# # # plot grid:
-# node_grid = astar.node_grid
-# colors = ["red" if node.value == 1 else "blue" for row in node_grid for node in row]
+path = astar.find_path(start, end)
+if path is not None:
+    simplified_path = simplify_path(path, 0.0)
+else:
+    simplified_path = []
+# # plot grid:
+node_grid = astar.node_grid
+colors = ["red" if node.value == 1 else "blue" for row in node_grid for node in row]
 
-# # Extract x and y coordinates
-# x_grid = [node.idx for row in node_grid for node in row]
-# y_grid = [node.idy for row in node_grid for node in row]
+# Extract x and y coordinates
+x_grid = [node.idx for row in node_grid for node in row]
+y_grid = [node.idy for row in node_grid for node in row]
 
-# # Plot the grid nodes with colors
-# plt.scatter(x_grid, y_grid, c=colors, label="Grid Nodes", alpha=0.5)
-# plt.xlabel("X")
-# plt.ylabel("Y")
-# plt.legend()
+# Plot the grid nodes with colors
+plt.scatter(x_grid, y_grid, c=colors, label="Grid Nodes", alpha=0.5)
+plt.xlabel("X")
+plt.ylabel("Y")
+plt.legend()
 
-path = [Point(0,0), Point(5,0), Point(5,4)]
+drive = Drive(0,0,0,2,3)
+# path = [Point(0,0), Point(1,0), Point(4,-4)]
 if path:
     x = [point.x for point in path]
     y = [point.y for point in path]
@@ -755,13 +756,15 @@ dt = 0.01
 # # left_speed = 0
 # # right_speed = 0
 
-control = Stanley_Controller(
-    drive=drive, k=5, vel=0.0, lookahead = 0.5
-)
+# control = Stanley_Controller(
+#     drive=drive, k=1.5, vel=0.1, lookahead = 0.0
+# )
+control = Stanley_Controller(drive, 5, 0.5, 0)
+
 if path is not None:
     smoother = Chaikin_Smooth(path)
     smoothed_path = smoother.smooth_path(4)
-    control.follow_path_feedback(smoothed_path,2.0,2.0,0.0)
+    # control.follow_path(smoothed_path)
 else:
     print("No valid path found. Cannot proceed with smoothing or following.")
 plt.plot(
@@ -769,31 +772,31 @@ plt.plot(
     [x.point[1] for x in smoothed_path],
     label="True Path",
 )
-plt.plot(drive.x_list, drive.y_list, label="Robot Path")
-plt.plot([x.point[0] for x in smoothed_path], [x.point[1] for x in smoothed_path], label="Path")
-# plt.plot([x.point[0] for x in path], [x.point[1] for x in path], label="Path")
-# plt.plot([point[0] for point in obstacles], [point[1] for point in obstacles], "ro", label="Obstacles")
-# plt.show(block=True)
-quiver = plt.quiver(
-    drive.x_list[0],  # Start at the first position
-    drive.y_list[0],
-    np.cos(drive.theta_list[0]),
-    np.sin(drive.theta_list[0]),
-    angles="xy",
-    scale_units="xy",
-    scale=1,
-    color="r",
-)
+# plt.plot(drive.x_list, drive.y_list, label="Robot Path")
+# plt.plot([x.point[0] for x in smoothed_path], [x.point[1] for x in smoothed_path], label="Path")
+# # plt.plot([x.point[0] for x in path], [x.point[1] for x in path], label="Path")
+# # plt.plot([point[0] for point in obstacles], [point[1] for point in obstacles], "ro", label="Obstacles")
+# # plt.show(block=True)
+# quiver = plt.quiver(
+#     drive.x_list[0],  # Start at the first position
+#     drive.y_list[0],
+#     np.cos(drive.theta_list[0]),
+#     np.sin(drive.theta_list[0]),
+#     angles="xy",
+#     scale_units="xy",
+#     scale=1,
+#     color="r",
+# )
 
-def update(frame):
-    # Update the position (X, Y) and direction (U, V) of the quiver
-    quiver.set_offsets([drive.x_list[frame], drive.y_list[frame]])
-    quiver.set_UVC(
-        np.cos(drive.theta_list[frame]),
-        np.sin(drive.theta_list[frame]),
-    )
+# def update(frame):
+#     # Update the position (X, Y) and direction (U, V) of the quiver
+#     quiver.set_offsets([drive.x_list[frame], drive.y_list[frame]])
+#     quiver.set_UVC(
+#         np.cos(drive.theta_list[frame]),
+#         np.sin(drive.theta_list[frame]),
+#     )
 
-anim = FuncAnimation(plt.gcf(), update, frames=len(drive.x_list), interval=1000 * dt)
+# anim = FuncAnimation(plt.gcf(), update, frames=len(drive.x_list), interval=1000 * dt)
 plt.show()
     
 
