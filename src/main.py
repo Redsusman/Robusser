@@ -56,8 +56,20 @@ def heapify(heap):
 
 class Point:
     def __init__(self, x: float, y: float):
+        self.x=x
+        self.y=y
         self.point = (x, y)
 
+def transform_global_to_local(global_list: list[Point], local_origin: Point, theta: float) -> list[Point]:
+    """Transform global coordinates to local coordinates."""
+    local_points = []
+    for global_point in global_list:
+        dx = global_point.x - local_origin.x
+        dy = global_point.y - local_origin.y
+        x_local = dx * math.cos(theta) + dy * math.sin(theta)
+        y_local = -dx * math.sin(theta) + dy * math.cos(theta)
+        local_points.append(Point(x_local, y_local))
+    return local_points
 
 class PIDController:
     def __init__(self, kp: float, ki: float, kd: float):
@@ -321,6 +333,26 @@ class AStar_Path_Follower:
             current = current.parent
         path.reverse()
         return path
+    
+    def inflate_grid(self, inflation_radius: int):
+        inflation_radius_cells = inflation_radius  # Since each cell is 1 ft
+        rows = len(self.node_grid)
+        cols = len(self.node_grid[0]) if rows > 0 else 0
+
+        to_inflate = set()
+
+        for row in self.node_grid:
+            for node in row:
+                if node.value == 1:
+                    x, y = node.idx, node.idy
+                    for dx in range(-inflation_radius_cells, inflation_radius_cells + 1):
+                        for dy in range(-inflation_radius_cells, inflation_radius_cells + 1):
+                            if abs(dx) + abs(dy) <= inflation_radius_cells:  # Manhattan distance
+                                nx, ny = x + dx, y + dy
+                                if 0 <= nx < rows and 0 <= ny < cols:
+                                    to_inflate.add((nx, ny))
+        for idx, idy in to_inflate:
+            self.node_grid[idx][idy].value = 1
 
     def find_path(self, start, end):
         obstacle = 1
@@ -365,11 +397,8 @@ class Elevator:
         self.pneumatic.open()
 
 def simplify_path(points, epsilon):
-    """Ramer-Douglas-Peucker path simplification for Point class"""
     if len(points) < 3:
         return points.copy()
-    
-    # Find point with maximum distance
     dmax = 0
     index = 0
     end = len(points) - 1
@@ -380,7 +409,6 @@ def simplify_path(points, epsilon):
             index = i
             dmax = d
     
-    # If max distance > epsilon, recursively simplify
     if dmax > epsilon:
         left = simplify_path(points[:index+1], epsilon)
         right = simplify_path(points[index:], epsilon)
@@ -389,7 +417,6 @@ def simplify_path(points, epsilon):
         return [points[0], points[end]]
 
 def perpendicular_distance(point, line_start, line_end):
-    """Calculate perpendicular distance from Point to line segment"""
     x, y = point.point
     x1, y1 = line_start.point
     x2, y2 = line_end.point
@@ -401,81 +428,65 @@ def perpendicular_distance(point, line_start, line_end):
     denominator = hypot(x2-x1, y2-y1)
     return numerator / denominator
 
-
-
-
-
-# controller.buttonA.pressed(lambda: elevator.up())
-# controller.buttonB.pressed(lambda: elevator.down())
-
-grid = [
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1],
-    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0],
-    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-    [1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1],
-    [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-    [1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1],
-    [1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-    [1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-]
+grid =  [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+        [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0],
+        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
 
 astar = AStar_Path_Follower(grid)
+astar.inflate_grid(1)
 
 # Define start and end nodes
-start = astar.node_grid[0][22]  # Top-left corner
-end = astar.node_grid[6][8]  # Bottom-right corner
+start = astar.node_grid[1][0]  # Top-left corner
+end = astar.node_grid[7][8]  # Bottom-right corner
 
 # Find the path
 path = astar.find_path(start, end)
 
-# dx = path[1].point[0] - path[0].point[0]
-# dy = path[1].point[1] - path[0].point[1]
-# initial_heading = math.atan2(dy, dx)
-
 brain = Brain()
 controller = Controller()
-drive = Drive(0, 23, 0, Ports.PORT1, Ports.PORT4, Ports.PORT3)
+drive = Drive(0, 0, 0, Ports.PORT1, Ports.PORT4, Ports.PORT3)
 control = Stanley_Controller(drive, 2.0, 0.3,0.0)
 # controllerr = Pure_Pursuit_Controller(drive, 0.5, 0.5, 5.0, 1.5)
 elevator = Elevator(brain)
 
 if path is not None:
-    smooth = Chaikin_Smooth(path)
+    transformed_path = transform_global_to_local(path, Point(1,0), math.pi/2)
+    smooth = Chaikin_Smooth(transformed_path)
     smoothed_path = smooth.smooth_path(4)
 else:
     print("Pathfinding failed. No valid path found.")
 
 def run():
-    # dy = smoothed_path[1].point[1] - smoothed_path[0].point[1]
-    # dx = smoothed_path[1].point[0] - smoothed_path[0].point[0]
-    # angle = math.atan2(dy, dx)
-    # normalized_angle = (angle + math.pi) % (2 * math.pi) - math.pi  # Normalize to [-pi, pi]
-    # drive.turn_to_angle(normalized_angle)
     control.follow_path_feedback(smoothed_path,2.0,2.0, 0.0)
-    # elevator.down()
+    elevator.down()
 
 # pure_pursuit_thread = Thread(lambda: controllerr.follow_path(smoothed_path))
 
@@ -484,13 +495,3 @@ while drive.imu.is_calibrating():
 stanley_thread = Thread(lambda: run())
 odometry_thread = Thread(drive.update_pose())
 
-
-
-# # left_motor = Motor(Ports.PORT1)
-# # right_motor = Motor(Ports.PORT4)
-# # controller = Controller()
-
-# # while True:
-# #     if controller.buttonR1.pressing():
-# #         left_motor.spin(FORWARD, 100, PERCENT)
-# #         right_motor.spin(FORWARD, 100, PERCENT)

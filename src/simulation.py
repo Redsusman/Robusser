@@ -1,322 +1,319 @@
-import numpy as np
+import heapq
 import math
 import matplotlib.pyplot as plt
-
-lookaheads=[]
+import numpy as np
 
 class Point:
-    def __init__(self, x, y):
-        self.point = (x, y)
-
-
-class Chaikin_Smooth:
-    def __init__(self, points: list[Point]):
-        self.points = points
-
-    def smooth_path(self, num_iterations: int):
-        for _ in range(num_iterations):
-            new_points = []
-            for i in range(len(self.points) - 1):
-                p0 = self.points[i].point
-                p1 = self.points[i + 1].point
-                q = (0.75 * p0[0] + 0.25 * p1[0], 0.75 * p0[1] + 0.25 * p1[1])
-                r = (0.25 * p0[0] + 0.75 * p1[0], 0.25 * p0[1] + 0.75 * p1[1])
-                q_point = Point(q[0], q[1])
-                r_point = Point(r[0], r[1])
-                new_points.append(q_point)
-                new_points.append(r_point)
-            new_points.insert(0, self.points[0])  # add first point
-            new_points.append(self.points[-1])
-            self.points = new_points
-        return self.points
-
-
-class Drive:
-    def __init__(self, x, y, theta, track_width, wheel_base):
+    def __init__(self, x: float, y: float, theta: float):
         self.x = x
         self.y = y
         self.theta = theta
-        self.track_width = track_width
-        self.wheel_base = wheel_base
-        self.speed = 0
-        self.omega = 0
-        self.x_list = []
-        self.y_list = []
-        self.theta_list = []
-        self.velocities = []
-        self.time_steps = []  # Track time/step index
 
-    def forward(self, left_speed: float, right_speed: float, dt: float):
-        speed = (right_speed + left_speed) / 2
-        omega = (right_speed - left_speed) / self.track_width
-        self.theta += omega * dt
-        self.x += speed * np.cos(self.theta) * dt
-        self.y += speed * np.sin(self.theta) * dt
-        self.speed = speed
-        self.omega = omega
-        self.x_list.append(self.x)
-        self.y_list.append(self.y)
-        self.theta_list.append(self.theta)
-        self.time_steps.append(len(self.time_steps))  # Track step index
-
-    def inverse(self, forward: float, omega: float) -> tuple[float, float]:
-        vl = forward - ((omega * self.track_width) / 2)
-        vr = forward + ((omega * self.track_width) / 2)
-        return vl, vr
-
-    def reset_pose(self, x, y, theta):
-        self.x = x
-        self.y = y
+class Node:
+    def __init__(self, value, cell_idx, cell_idy, theta):
+        self.x = cell_idx  # Changed from 0.0 to cell_idx
+        self.y = cell_idy  # Changed from 0.0 to cell_idy
         self.theta = theta
-        self.x_list = [x]
-        self.y_list = [y]
-        self.theta_list = [theta]
+        self.value = value
+        self.idx = cell_idx
+        self.idy = cell_idy
+        self.g = float('inf')
+        self.h = 0
+        self.f = float('inf')
+        self.parent = None
+        self.visited = False  # Fixed: made it an instance variable
 
-class Stanley_Controller:
-    def __init__(self, drive: Drive, k: float, vel, lookahead):
-        self.drive = drive
-        self.k = k
-        self.vel = vel
-        self.lookahead = lookahead
-        pass
+    def __lt__(self, other):
+        return self.f < other.f
+
+    def __eq__(self, other):
+        return (self.idx == other.idx and 
+                self.idy == other.idy and 
+                abs(self.theta - other.theta) < math.pi/4)  # Added theta comparison
+
+class Kinematic_AStar_Path_Follower:
+    def __init__(self, map_grid, max_vel, max_omega, robot_radius):
+        self.max_vel = max_vel
+        self.max_omega = max_omega
+        self.map_grid = map_grid
+        self.robot_radius = robot_radius
+        self.node_grid = [
+            [
+                Node(self.map_grid[row][col], row, col, 0)
+                for col in range(len(self.map_grid[0]))
+            for row in range(len(self.map_grid))
+        ]]
     
-    def calculate(self, path: list[Point]):
-        robot_pose = (self.drive.x, self.drive.y)
-        theta = self.drive.theta
-        distances = [math.hypot(p.point[0] - robot_pose[0], p.point[1] - robot_pose[1]) for p in path]
-        closest_idx = distances.index(min(distances))
-        shortest_point = path[closest_idx]
-        next_point = path[closest_idx + 1] if closest_idx + 1 < len(path) else shortest_point
-        dx = next_point.point[0] - shortest_point.point[0]
-        dy = next_point.point[1] - shortest_point.point[1]
-        path_heading = math.atan2(dy, dx)
-        heading_error = math.atan2(math.sin(path_heading - theta), math.cos(path_heading - theta))
-        rx = robot_pose[0] - shortest_point.point[0]
-        ry = robot_pose[1] - shortest_point.point[1]
-        cross_track_error = rx * math.sin(path_heading) - ry * math.cos(path_heading)
-        v = max(self.drive.speed, 0.1)
-        steering_angle = heading_error + math.atan((self.k * cross_track_error) / v)
-        steering_radius = self.drive.wheel_base / (math.tan(steering_angle) + 1e-6)
+    def calculate_distance(self, node1, node2):
+        """Calculate Euclidean distance between two nodes."""
+        dx = node2.x - node1.x
+        dy = node2.y - node1.y
+        return math.sqrt(dx**2 + dy**2)
 
-        return steering_angle
+    def reconstruct_path(self, end_node):
+        path = []
+        current = end_node
+        while current is not None:
+            path.append(Point(current.x, current.y, current.theta))
+            current = current.parent
+        return path[::-1]  # Reverse the path
+
+    def calculate_trajectory(self, v, omega, dt, start_x, start_y, start_theta):
+        x = start_x
+        y = start_y
+        theta = start_theta
+        trajectory = []
+        num_steps = 20
+        delta_t = dt / num_steps
+
+        for _ in range(num_steps):
+            trajectory.append(Point(x, y, theta))
+            x += v * math.cos(theta) * delta_t
+            y += v * math.sin(theta) * delta_t
+            theta += omega * delta_t
+            theta = theta % (2 * math.pi)  # Normalize angle
+        return trajectory
+
+    def is_collision(self, x, y):
+        grid_rows = len(self.map_grid)
+        grid_cols = len(self.map_grid[0]) if grid_rows > 0 else 0
+
+        # Convert to integer grid indices
+        i = int(round(y))
+        j = int(round(x))
+
+        # Check out-of-bounds
+        if i < 0 or j < 0 or i >= grid_rows or j >= grid_cols:
+            return True
+
+        # Check if robot is on an obstacle cell
+        if self.map_grid[i][j] == 1:
+            return True
+
+        # Check neighbors for collision (with robot radius)
+        radius = int(math.ceil(self.robot_radius))
+        for di in range(-radius, radius + 1):
+            for dj in range(-radius, radius + 1):
+                ni, nj = i + di, j + dj
+                if 0 <= ni < grid_rows and 0 <= nj < grid_cols:
+                    if self.map_grid[ni][nj] == 1:
+                        # Calculate actual distance
+                        dist = math.sqrt(di**2 + dj**2)
+                        if dist <= self.robot_radius:
+                            return True
+        return False
+
+    def heuristic(self, node, goal):
+        dx = goal.x - node.x
+        dy = goal.y - node.y
+        dtheta = min(abs(goal.theta - node.theta), 2 * math.pi - abs(goal.theta - node.theta))
+        return math.sqrt(dx**2 + dy**2) + 0.2 * dtheta  # Adjusted weight
     
-    def calculate_feedback(self, path: list[Point], heading_kP, cte_kP, dist_kP):
-        robot_pose = (self.drive.x, self.drive.y)
-        theta = self.drive.theta
-        distances = [math.hypot(p.point[0] - robot_pose[0], p.point[1] - robot_pose[1]) for p in path]
-        closest_idx = distances.index(min(distances))
-        shortest_point = path[closest_idx]
-        next_point = path[closest_idx + 1] if closest_idx + 1 < len(path) else shortest_point
-        dx = next_point.point[0] - shortest_point.point[0]
-        dy = next_point.point[1] - shortest_point.point[1]
-        path_heading = math.atan2(dy, dx)
-        heading_error = math.atan2(math.sin(path_heading - theta), math.cos(path_heading - theta))
-        rx = robot_pose[0] - shortest_point.point[0]
-        ry = robot_pose[1] - shortest_point.point[1]
-        cross_track_error = rx * math.sin(path_heading) - ry * math.cos(path_heading)
-        v = max(self.drive.speed, 0.1)
-        steering_angle = heading_error + math.atan((self.k * cross_track_error) / v)
-        steering_radius = self.drive.wheel_base / (math.tan(steering_angle) + 1e-6)
-        dist_error = math.hypot(shortest_point.point[0]-robot_pose[0], shortest_point.point[1] - robot_pose[1])
+    def discretize(self,node, res=0.25, angle_bins=8):
+        xi = round(node.x / res)
+        yi = round(node.y / res)
+        ti = round((node.theta % (2 * math.pi)) / (2 * math.pi / angle_bins))
+        return (xi, yi, ti)
 
-        heading_correction = heading_kP*heading_error
-        cte_correction = cte_kP*cross_track_error
-        dist_correction = dist_kP*dist_error
-
-        return dist_correction, cte_correction+heading_correction
-
-    def follow_path_feedback(self, path: list[Point],heading_kP, cte_kP, dist_kP):
-        dt = 0.1
-        for t in range(1000):
-            dist_correction, omega = self.calculate_feedback(path,heading_kP, cte_kP, dist_kP)
-            v = 0.5+dist_correction
-            vl, vr = self.drive.inverse(v, omega)
-            print(v,omega)
-            self.drive.forward(vl, vr, dt)
-            if (
-                np.linalg.norm(
-                    np.array([self.drive.x, self.drive.y]) - np.array(path[-1].point)
-                )
-                < 0.1
-            ):
-                break
-
-    
-    def follow_path(self, path: list[Point]):
-        dt = 0.1
-        for t in range(1000):
-            radius = self.calculate(path)
-            vl, vr = self.drive.inverse(self.vel, radius)
-            self.drive.forward(vl, vr, dt)
-            if (
-                np.linalg.norm(
-                    np.array([self.drive.x, self.drive.y]) - np.array(path[-1].point)
-                )
-                < 0.1
-            ):
-                break
-
-
-class Pure_Pursuit_Controller:
-    def __init__(
-        self, drive: Drive, speed_parameter: float
-    ):
-        self.drive = drive
-        self.speed_parameter = speed_parameter
-        self.min_lookahead = 0.2
-        self.max_lookahead = 0.75
-        self.max_accel = 0.5
-        self.max_vel = 0.5
-        self.max_omega = math.pi
-
-    def velocity_profile(self, max_accel, max_vel, path: list[Point]):
-        if not path:
-            return []
-        distances = [math.hypot(p2.point[0] - p1.point[0], p2.point[1] - p1.point[1]) 
-                for p1, p2 in zip(path[:-1], path[1:])]
-    
-    # Initialize velocity arrays
-        forward_vel = [0.0] * len(path)  # Forward pass (accelerate)
-        backward_vel = [0.0] * len(path)  # Backward pass (decelerate)
-        forward_vel[0] = 0.0  # Start at rest
-        for i in range(1, len(path)):
-            forward_vel[i] = math.sqrt(forward_vel[i-1]**2 + 2 * max_accel * distances[i-1])
-            if forward_vel[i] > max_vel:
-                forward_vel[i] = max_vel
-
-        backward_vel[-1] = 0.0  
-        for i in range(len(path)-2, -1, -1):
-            backward_vel[i] = math.sqrt(backward_vel[i+1]**2 + 2 * max_accel * distances[i])
-            if backward_vel[i] > max_vel:
-                backward_vel[i] = max_vel
-    
-        profile = [min(fv, bv) for fv, bv in zip(forward_vel, backward_vel)]
-        profile[0]+=0.01
-        return profile
+    # def find_path(self, start, goal):
+    #     open_set = []
+    #     start.g = 0
+    #     start.h = self.heuristic(start, goal)
+    #     start.f = start.g + start.h
+    #     heapq.heappush(open_set, start)
         
-        
-    def calculate(self, path: list[Point]):
-        robot_pose = (self.drive.x, self.drive.y)
-        current_speed = abs(self.drive.speed)
-        lookahead = np.clip(self.speed_parameter*current_speed, self.min_lookahead, self.max_lookahead)
-        path_points = [(point.point[0], point.point[1]) for point in path]
-        theta = self.drive.theta
-        distances = [
-            math.sqrt((p[0] - robot_pose[0]) ** 2 + (p[1] - robot_pose[1]) ** 2)
-            for p in path_points
-        ]
-        closest_idx = min(range(len(distances)), key=lambda i: distances[i])
-        lookahead_point = path_points[-1]
-        for i in range(closest_idx, len(path_points)):
-            p = path_points[i]
-            dist = math.sqrt((p[0] - robot_pose[0]) ** 2 + (p[1] - robot_pose[1]) ** 2)
-            if dist >= lookahead:
-                lookahead_point = p
-                break
-        dx = lookahead_point[0] - robot_pose[0]
-        dy = lookahead_point[1] - robot_pose[1]
-        alpha = math.atan2(dy, dx) - theta
-        alpha = math.atan2(math.sin(alpha), math.cos(alpha))
-        dist = math.sqrt(dx**2 + dy**2)
-        if abs(dist) < 1e-10:
-            curvature = 0.0
-        else:
-            curvature = (2.0 * math.sin(alpha)) / lookahead #use lookahead instead of dist
-        return curvature, lookahead
-    
-    def velocity_scaler(self, curvature: float, max_speed: float, max_omega: float):
-    # Small curvature threshold to avoid division by near-zero
-        curvature_threshold = 1e-6
-    
-        if abs(curvature) < curvature_threshold:
-            return max_speed
-        radius = 1.0 / max(abs(curvature), curvature_threshold)
-        max_centripetal_accel = 2.0  # Maximum allowed centripetal acceleration (m/s²)
-        smoothing_factor = 0.2# Controls how gradually velocity changes with curvature
-        max_curve_speed = math.sqrt(max_centripetal_accel * radius)
-        max_omega_speed = max_omega / max(abs(curvature), curvature_threshold)
-        base_speed = min(max_speed, max_curve_speed, max_omega_speed)
-        if hasattr(self, 'last_speed'):
-            smoothed_speed = (1 - smoothing_factor) * self.last_speed + smoothing_factor * base_speed
-        else:
-            smoothed_speed = base_speed
-        self.last_speed = smoothed_speed  
-        return smoothed_speed
+    #     closed_set = set()
 
-    def follow_path(self, path: list[Point]):
-        dt = 0.05  # Time step
-        global_velocities = self.velocity_profile(self.max_accel, self.max_vel, path)
-    
-        for t in range(1000):
-            robot_pos = (self.drive.x, self.drive.y)
-            curvature, lookahead = self.calculate(path)
-            closest_idx = min(range(len(path)), 
-                         key=lambda i: math.hypot(path[i].point[0]-robot_pos[0], 
-                                               path[i].point[1]-robot_pos[1]))
+    #     while open_set:
+          
+    #         current_node = heapq.heappop(open_set)
             
-            target_velocity_global = global_velocities[closest_idx]
-            target_velocity_local = self.velocity_scaler(curvature, self.max_vel, self.max_omega)
-            target_velocity = min(target_velocity_global, target_velocity_local)
-            if hasattr(self, 'last_velocity'):
-                max_dv = self.max_accel * dt
-                target_velocity = np.clip(target_velocity, 
-                                    self.last_velocity - max_dv, 
-                                    self.last_velocity + max_dv)
-            omega = curvature * target_velocity
-            vl, vr = self.drive.inverse(target_velocity, omega)
-            self.drive.forward(vl, vr, dt)
-            self.last_velocity = target_velocity
-            self.drive.velocities.append(target_velocity)
-            if np.linalg.norm(np.array([self.drive.x, self.drive.y]) - np.array(path[-1].point)) < 0.1:
-                break
+    #         # Check if current node is close enough to goal
+    #         if (abs(current_node.x - goal.x) < 0.5 and 
+    #             abs(current_node.y - goal.y) < 0.5 and 
+    #             min(abs(current_node.theta - goal.theta), 
+    #                 2*math.pi - abs(current_node.theta - goal.theta)) < math.pi/4):
+    #             return self.reconstruct_path(current_node)
 
-path = [Point(0, 0), Point(3,3), Point(6,7), Point(10,5), Point(14,3), Point(10,1), Point(7,-3)]
-smoothener = Chaikin_Smooth(path)
-smooth_path = smoothener.smooth_path(3)
-drive = Drive(0, 0,3*math.pi/2, 3,3)
-controller = Pure_Pursuit_Controller(drive, 0.4)
-stanley = Stanley_Controller(drive, 3.0, 1.0, 3)
-stanley.follow_path_feedback(smooth_path,2.0,2.0,0.5)
+    #         closed_set.add((current_node.x, current_node.y, current_node.theta))
 
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), gridspec_kw={'height_ratios': [2, 1]})
+    #         # Generate motion primitives
+    #         possible_velocities = np.linspace(0, self.max_vel, num=5)
+    #         possible_omegas = np.linspace(-self.max_omega, self.max_omega, num=5)
+    #         dt = 0.5  # time step
 
-# 1. Plot Robot Path vs. Reference (Top Subplot)
-ax1.plot(drive.x_list, drive.y_list, label="Robot Path", color="blue", linewidth=2)
-ax1.plot(
-    [p.point[0] for p in smooth_path],
-    [p.point[1] for p in smooth_path],
-    label="Reference Path",
-    linestyle="--",
-    color="orange",
-)
-ax1.scatter(drive.x_list[0], drive.y_list[0], color='green', marker='o', s=100, label='Start')
-ax1.scatter(drive.x_list[-1], drive.y_list[-1], color='red', marker='x', s=100, label='End')
-ax1.set_xlabel("X Position")
-ax1.set_ylabel("Y Position")
-ax1.set_title("Robot Trajectory vs. Reference Path")
-ax1.legend()
-ax1.grid(True)
-ax1.axis('equal')
+    #         for v in possible_velocities:
+    #             for omega in possible_omegas:
+    #                 # print(v,omega)
+    #                 if v == 0 and omega == 0:
+    #                     continue  # skip zero motion
+                        
+    #                 traj = self.calculate_trajectory(
+    #                     v, omega, dt, 
+    #                     current_node.x, current_node.y, current_node.theta
+    #                 )
+                    
+    #                 # Check for collisions along trajectory
+    #                 collision = False
+    #                 for point in traj:
+    #                     if self.is_collision(point.x, point.y):
+    #                         collision = True
+    #                         break
+    #                 if collision:
+    #                     continue
 
-# 2. Plot Velocity vs. Path Position (Bottom Subplot)
-# Compute arc length (skip the first point to match velocities)
-# arc_length = np.cumsum([np.hypot(drive.x_list[i] - drive.x_list[i-1], 
-#                                 drive.y_list[i] - drive.y_list[i-1]) 
-#                        for i in range(1, len(drive.x_list))])
+    #                 final_point = traj[-1]
+    #                 print(final_point.x, final_point.y, final_point.theta)
+    #                 neighbor_pos = (final_point.x, final_point.y, final_point.theta)
+                    
+    #                 # Skip if already in closed set
+    #                 if neighbor_pos in closed_set:
+    #                     continue
 
-# # Ensure velocities and arc_length have the same shape
-# assert len(arc_length) == len(drive.velocities), "Mismatched dimensions!"
+    #                 # Create neighbor node
+    #                 neighbor = Node(
+    #                     0, final_point.x, final_point.y, final_point.theta
+    #                 )
+    #                 neighbor.g = current_node.g + math.sqrt(
+    #                     (final_point.x - current_node.x)**2 + 
+    #                     (final_point.y - current_node.y)**2
+    #                 )
+    #                 neighbor.h = self.heuristic(neighbor, goal)
+    #                 neighbor.f = neighbor.g + neighbor.h
+    #                 neighbor.parent = current_node
 
-# # Plot velocity vs. arc length
-# ax2.plot(arc_length, drive.velocities, label="Velocity", color="purple", linewidth=2)
+    #                 # Check if this neighbor is already in open set with lower cost
+    #                 found = False
+    #                 for open_node in open_set:
+    #                     if (abs(open_node.x - neighbor.x) < 0.1 and 
+    #                         abs(open_node.y - neighbor.y) < 0.1 and 
+    #                         abs(open_node.theta - neighbor.theta) < math.pi/4):
+    #                         if open_node.f <= neighbor.f:
+    #                             found = True
+    #                             break
+    #                         else:
+    #                             open_set.remove(open_node)
+    #                             heapq.heapify(open_set)
+    #                             break
+                    
+    #                 if not found:
+    #                     heapq.heappush(open_set, neighbor)
 
-# ax2.plot(arc_length, drive.velocities, label="Velocity", color="purple", linewidth=2)
-# ax2.plot(arc_length, lookaheads, label="Lookahead", linestyle="--", color="red")
-# ax2.set_xlabel("Distance Along Path (m)")
-# ax2.set_ylabel("Velocity (m/s)")
-# ax2.set_title("Velocity Profile vs. Path Position")
-# ax2.legend()
-# ax2.grid(True)
+    #     return None  # No path found
 
-# plt.tight_layout()
-plt.show()
+    def find_path(self, start, goal):
+        open_set = []
+        open_dict = {}  # Maps discretized (x, y, theta) to cost
+        closed_set = set()
+
+    # Heuristic function
+
+    # Discretization
+
+
+    # Initialize
+        start.g = 0
+        start.f = self.heuristic(start,goal)
+        heapq.heappush(open_set, (start.f, start))
+        open_dict[self.discretize(start)] = start.f
+
+        while open_set:
+            _, current_node = heapq.heappop(open_set)
+            current_state = self.discretize(current_node)
+
+            if current_state in closed_set:
+                continue
+            closed_set.add(current_state)
+
+            if self.heuristic(current_node,goal) < 0.05:
+                return self.reconstruct_path(current_node)
+
+        # Motion primitives
+            for velocity in np.linspace(0, self.max_vel, 3):
+                for omega in np.linspace(-self.max_omega, self.max_omega, 5):
+                    trajectory = self.calculate_trajectory(current_node, velocity, omega, current_node.x, current_node.y, current_node.theta)
+
+                    if not trajectory or self.is_collision(trajectory[-1][0], trajectory[-1][1]):
+                        continue
+
+                    final_point = trajectory[-1]
+                    neighbor = Node(0, final_point.x, final_point.y, final_point.theta)
+                    neighbor.parent = current_node
+                    neighbor.g = current_node.g + self.calculate_distance(current_node, neighbor)
+                    neighbor.f = neighbor.g + self.heuristic(neighbor,goal)
+
+                    neighbor_state = self.discretize(neighbor)
+
+                    if neighbor_state in closed_set:
+                        continue
+
+                    if neighbor_state not in open_dict or neighbor.f < open_dict[neighbor_state]:
+                        open_dict[neighbor_state] = neighbor.f
+                        heapq.heappush(open_set, (neighbor.f, neighbor))
+
+        return None  # No path found
+
+# Test the algorithm
+grid = [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
+        [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0],
+        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+
+astar = Kinematic_AStar_Path_Follower(grid, 1.0, math.pi/4, 0.5)
+
+start_node = Node(0, 0, 0, 0)
+goal_node = Node(0, 7, 7, 0)
+
+path = astar.find_path(start_node, goal_node)
+
+if path:
+    x_list = [p.x for p in path]
+    y_list = [p.y for p in path]
+    
+    plt.figure(figsize=(10, 10))
+    
+    # Plot the grid
+    for y in range(len(grid)):
+        for x in range(len(grid[0])):
+            if grid[y][x] == 1:
+                plt.plot(x, y, 'sk')  # Obstacles in black
+    
+    # Plot the path
+    plt.plot(x_list, y_list, '-o', color='blue', linewidth=2, markersize=5)
+    plt.plot(start_node.x, start_node.y, 'og', markersize=10)  # Start in green
+    plt.plot(goal_node.x, goal_node.y, 'or', markersize=10)    # Goal in red
+    
+    plt.grid()
+    plt.title("Kinematic A* Path Planning")
+    plt.xlabel("X Coordinate")
+    plt.ylabel("Y Coordinate")
+    plt.show()
+else:
+    print("No path found!")

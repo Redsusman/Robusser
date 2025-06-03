@@ -54,6 +54,16 @@ class Point:
         self.y = y
         self.point = (x, y)
 
+def transform_global_to_local(global_list: list[Point], local_origin: Point, theta: float) -> list[Point]:
+    """Transform global coordinates to local coordinates."""
+    local_points = []
+    for global_point in global_list:
+        dx = global_point.x - local_origin.x
+        dy = global_point.y - local_origin.y
+        x_local = dx * np.cos(theta) + dy * np.sin(theta)
+        y_local = -dx * np.sin(theta) + dy * np.cos(theta)
+        local_points.append(Point(x_local, y_local))
+    return local_points
 
 class PIDController:
     def __init__(self, kp: float, ki: float, kd: float):
@@ -432,6 +442,26 @@ class AStar_Path_Follower:
             current = current.parent
         path.reverse()
         return path
+    
+    def inflate_grid(self, inflation_radius: int):
+        inflation_radius_cells = inflation_radius  # Since each cell is 1 ft
+        rows = len(self.node_grid)
+        cols = len(self.node_grid[0]) if rows > 0 else 0
+
+        to_inflate = set()
+
+        for row in self.node_grid:
+            for node in row:
+                if node.value == 1:
+                    x, y = node.idx, node.idy
+                    for dx in range(-inflation_radius_cells, inflation_radius_cells + 1):
+                        for dy in range(-inflation_radius_cells, inflation_radius_cells + 1):
+                            if abs(dx) + abs(dy) <= inflation_radius_cells:  # Manhattan distance
+                                nx, ny = x + dx, y + dy
+                                if 0 <= nx < rows and 0 <= ny < cols:
+                                    to_inflate.add((nx, ny))
+        for idx, idy in to_inflate:
+            self.node_grid[idx][idy].value = 1
 
     def find_path(self, start, end):
         obstacle = 1
@@ -681,6 +711,7 @@ class Potential_Field_Method:
 # # # (0, 0)(1, 1)(2, 1)(3, 2)(3, 3)(4, 3)(5, 4)(5, 5)(5, 6)(6, 5)(7, 6)(7, 7)(7, 8)(8, 9)(9, 9)
 # # row = 10
 # col = 10
+
 grid =  [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
         [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
         [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
@@ -688,115 +719,135 @@ grid =  [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
         [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
         [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1],
-        [1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
         [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
         [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
         [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0],
         [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
         [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-        [1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1],
         [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
         [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-        [1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1],
-        [1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 1, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
+        [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
         [1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
         [1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+        [1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
 astar = AStar_Path_Follower(grid)
+# dwa = DWA_Controller(1.0, 0.5, math.pi, 0.05, 2, 0.1, 0.1, 0.1, 0.2)
 
-dwa = DWA_Controller(1.0, 0.5, math.pi, 0.05, 2, 0.1, 0.1, 0.1, 0.2)
-
-# Define start and end nodes
-start = astar.node_grid[0][22]  # Top-left corner
-end = astar.node_grid[6][8]  # Bottom-right corner
+# # Define start and end nodes
+# start = astar.node_grid[1][0]  # Top-left corner
+# end = astar.node_grid[0][15]  # Bottom-right corner
 
 # Find the path
-path = astar.find_path(start, end)
-if path is not None:
-    simplified_path = simplify_path(path, 0.0)
-else:
-    simplified_path = []
+# path = astar.find_path(start, end)
+# if path is not None:
+#     simplified_path = simplify_path(path, 0.2)
+# else:
+#     simplified_path = []
 # # plot grid:
+astar.inflate_grid(0)
 node_grid = astar.node_grid
-colors = ["red" if node.value == 1 else "blue" for row in node_grid for node in row]
 
-# Extract x and y coordinates
-x_grid = [node.idx for row in node_grid for node in row]
-y_grid = [node.idy for row in node_grid for node in row]
+x = []
+y = []
+colors = []
 
-# Plot the grid nodes with colors
-plt.scatter(x_grid, y_grid, c=colors, label="Grid Nodes", alpha=0.5)
-plt.xlabel("X")
-plt.ylabel("Y")
-plt.legend()
+for row in node_grid:
+    for node in row:
+        x.append(node.idx)  # Assuming node.x contains the x-coordinate
+        y.append(node.idy)  # Assuming node.y contains the y-coordinate
+        colors.append("red" if node.value == 1 else "blue")  # Color based on node value
 
-drive = Drive(0,0,0,2,3)
-# path = [Point(0,0), Point(1,0), Point(4,-4)]
-if path:
-    x = [point.x for point in path]
-    y = [point.y for point in path]
-    plt.plot(x, y, "", label="A* Path")
-else:
-    print("No path found.")
+# Plot the grid
+
+plt.figure(figsize=(10, 10))
+plt.scatter(x, y, c=colors, s=10)  # Ensure 'c' matches the size of 'x' and 'y'
+plt.xlabel("X Coordinate")
+plt.ylabel("Y Coordinate")
+plt.title("Inflated Grid Visualization")
+plt.grid()
+plt.show()
+
+# drive = Drive(0,0,0,2,3)
+# transformed_path = transform_global_to_local(simplified_path, Point(1,0), math.pi/2)
+# smooth = Chaikin_Smooth(simplified_path)
+
+# # path = [Point(0,0), Point(1,0), Point(4,-4)]
+# if transformed_path:
+#     x = [point.x for point in transformed_path]
+#     y = [point.y for point in transformed_path]
+#     x1 = [point.point[0] for point in simplified_path]
+#     y1 = [point.point[1] for point in simplified_path]
+#     smoothed_path = smooth.smooth_path(4)
+#     x2= [point.point[0] for point in smoothed_path]
+#     y2= [point.point[1] for point in smoothed_path]
+#     plt.plot(x, y, "", label="A* Path")
+#     plt.plot(x1, y1, "", label="Simplified Path")
+#     plt.plot(x2, y2, "", label="Smoothed Path")
+# else:
+#     print("No path found.")
 
 
-# # plt.ion()
-# # drive = Drive(0, 0, 0, 10)
-dt = 0.01
-# # left_speed = 0
-# # right_speed = 0
 
-# control = Stanley_Controller(
-#     drive=drive, k=1.5, vel=0.1, lookahead = 0.0
+# # # plt.ion()
+# # # drive = Drive(0, 0, 0, 10)
+# dt = 0.01
+# # # left_speed = 0
+# # # right_speed = 0
+
+# # control = Stanley_Controller(
+# #     drive=drive, k=1.5, vel=0.1, lookahead = 0.0
+# # )
+# control = Stanley_Controller(drive, 5, 0.5, 0)
+
+# if path is not None:
+#     smoother = Chaikin_Smooth(path)
+#     smoothed_path = smoother.smooth_path(4)
+#     # control.follow_path(smoothed_path)
+# else:
+#     print("No valid path found. Cannot proceed with smoothing or following.")
+# plt.plot(
+#     [x.point[0] for x in smoothed_path],
+#     [x.point[1] for x in smoothed_path],
+#     label="True Path",
 # )
-control = Stanley_Controller(drive, 5, 0.5, 0)
+# # plt.plot(drive.x_list, drive.y_list, label="Robot Path")
+# # plt.plot([x.point[0] for x in smoothed_path], [x.point[1] for x in smoothed_path], label="Path")
+# # # plt.plot([x.point[0] for x in path], [x.point[1] for x in path], label="Path")
+# # # plt.plot([point[0] for point in obstacles], [point[1] for point in obstacles], "ro", label="Obstacles")
+# # # plt.show(block=True)
+# # quiver = plt.quiver(
+# #     drive.x_list[0],  # Start at the first position
+# #     drive.y_list[0],
+# #     np.cos(drive.theta_list[0]),
+# #     np.sin(drive.theta_list[0]),
+# #     angles="xy",
+# #     scale_units="xy",
+# #     scale=1,
+# #     color="r",
+# # )
 
-if path is not None:
-    smoother = Chaikin_Smooth(path)
-    smoothed_path = smoother.smooth_path(4)
-    # control.follow_path(smoothed_path)
-else:
-    print("No valid path found. Cannot proceed with smoothing or following.")
-plt.plot(
-    [x.point[0] for x in smoothed_path],
-    [x.point[1] for x in smoothed_path],
-    label="True Path",
-)
-# plt.plot(drive.x_list, drive.y_list, label="Robot Path")
-# plt.plot([x.point[0] for x in smoothed_path], [x.point[1] for x in smoothed_path], label="Path")
-# # plt.plot([x.point[0] for x in path], [x.point[1] for x in path], label="Path")
-# # plt.plot([point[0] for point in obstacles], [point[1] for point in obstacles], "ro", label="Obstacles")
-# # plt.show(block=True)
-# quiver = plt.quiver(
-#     drive.x_list[0],  # Start at the first position
-#     drive.y_list[0],
-#     np.cos(drive.theta_list[0]),
-#     np.sin(drive.theta_list[0]),
-#     angles="xy",
-#     scale_units="xy",
-#     scale=1,
-#     color="r",
-# )
+# # def update(frame):
+# #     # Update the position (X, Y) and direction (U, V) of the quiver
+# #     quiver.set_offsets([drive.x_list[frame], drive.y_list[frame]])
+# #     quiver.set_UVC(
+# #         np.cos(drive.theta_list[frame]),
+# #         np.sin(drive.theta_list[frame]),
+# #     )
 
-# def update(frame):
-#     # Update the position (X, Y) and direction (U, V) of the quiver
-#     quiver.set_offsets([drive.x_list[frame], drive.y_list[frame]])
-#     quiver.set_UVC(
-#         np.cos(drive.theta_list[frame]),
-#         np.sin(drive.theta_list[frame]),
-#     )
-
-# anim = FuncAnimation(plt.gcf(), update, frames=len(drive.x_list), interval=1000 * dt)
+# # anim = FuncAnimation(plt.gcf(), update, frames=len(drive.x_list), interval=1000 * dt)
 plt.show()
     
 
