@@ -562,10 +562,7 @@ class AStar_Path_Follower:
                 child_node.h = self.heuristic(child_node.pose, end)
                 child_node.f = child_node.g + child_node.h
                 child_node.parent = current
-
                 heappush(open, child_node)
-            print(current.x, current.y, current.theta)
-        print("hello")
         return None
 
     def quantize(self, node: Node, resolution):
@@ -574,7 +571,6 @@ class AStar_Path_Follower:
             round(node.y / resolution) * resolution,
             round(node.theta / resolution) * resolution,
         )
-
 
 grid = [
     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -610,27 +606,20 @@ grid = [
     [1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
 ]
 
-
 finder = AStar_Path_Follower(grid, robot_radius=1.5)
-
 path = finder.find_path(
     Node(1, 0, math.pi / 2, 0),
     Node(8, 7, 0 - 0.3, 0),
     v_max=0.1,
     ω_max=math.pi / 8,
 )
-
 node_grid = finder.node_grid
-
-
 brain = Brain()
 controller = Controller()
 drive = Drive(0, 0, 0, Ports.PORT1, Ports.PORT4, Ports.PORT3)
 control = Stanley_Controller(drive, 2.0, 0.3, 0.0)
 elevator = Elevator(brain)
 distance_sensor = Distance_Sensor()
-
-
 if path is not None:
     smoothed_path = Chaikin_Smooth(
         [Point(pose.x, pose.y) for pose in path]
@@ -638,20 +627,14 @@ if path is not None:
     transformed_path = transform_global_to_local(
         smoothed_path, Point(1, 0), math.pi / 2
     )
-
 else:
     print("Pathfinding failed. No valid path found.")
-
-
 def run():
     control.follow_path_feedback(
         transformed_path, 2.0, 2.0, 0.0, distance_sensor.sensor
     )
     elevator.down()
-
-
 while drive.imu.is_calibrating():
     wait(100, MSEC)
-
 stanley_thread = Thread(lambda: run())
 odometry_thread = Thread(drive.update_pose())
