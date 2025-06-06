@@ -744,21 +744,23 @@ grid =  [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
         [1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
 astar = AStar_Path_Follower(grid)
+astar_two = AStar_Path_Follower(grid)
+astar.inflate_grid(0)
 # dwa = DWA_Controller(1.0, 0.5, math.pi, 0.05, 2, 0.1, 0.1, 0.1, 0.2)
 
 # # Define start and end nodes
-# start = astar.node_grid[1][0]  # Top-left corner
-# end = astar.node_grid[0][15]  # Bottom-right corner
+start = astar.node_grid[1][0]  # Top-left corner
+end = astar.node_grid[8][15]  # Bottom-right corner
 
 # Find the path
-# path = astar.find_path(start, end)
-# if path is not None:
-#     simplified_path = simplify_path(path, 0.2)
-# else:
-#     simplified_path = []
-# # plot grid:
-astar.inflate_grid(0)
-node_grid = astar.node_grid
+path = astar.find_path(start, end)
+if path is not None:
+    simplified_path = simplify_path(path, 0.5)
+else:
+    simplified_path = []
+# plot grid:
+
+node_grid = astar_two.node_grid
 
 x = []
 y = []
@@ -778,26 +780,26 @@ plt.xlabel("X Coordinate")
 plt.ylabel("Y Coordinate")
 plt.title("Inflated Grid Visualization")
 plt.grid()
-plt.show()
 
-# drive = Drive(0,0,0,2,3)
-# transformed_path = transform_global_to_local(simplified_path, Point(1,0), math.pi/2)
-# smooth = Chaikin_Smooth(simplified_path)
 
-# # path = [Point(0,0), Point(1,0), Point(4,-4)]
-# if transformed_path:
-#     x = [point.x for point in transformed_path]
-#     y = [point.y for point in transformed_path]
-#     x1 = [point.point[0] for point in simplified_path]
-#     y1 = [point.point[1] for point in simplified_path]
-#     smoothed_path = smooth.smooth_path(4)
-#     x2= [point.point[0] for point in smoothed_path]
-#     y2= [point.point[1] for point in smoothed_path]
-#     plt.plot(x, y, "", label="A* Path")
-#     plt.plot(x1, y1, "", label="Simplified Path")
-#     plt.plot(x2, y2, "", label="Smoothed Path")
-# else:
-#     print("No path found.")
+drive = Drive(0,0,0,2,3)
+transformed_path = transform_global_to_local(simplified_path, Point(1,0), math.pi/2)
+smooth = Chaikin_Smooth(simplified_path)
+
+# path = [Point(0,0), Point(1,0), Point(4,-4)]
+if transformed_path:
+    x = [point.x for point in transformed_path]
+    y = [point.y for point in transformed_path]
+    x1 = [point.point[0] for point in simplified_path]
+    y1 = [point.point[1] for point in simplified_path]
+    smoothed_path = smooth.smooth_path(4)
+    x2= [point.point[0] for point in smoothed_path]
+    y2= [point.point[1] for point in smoothed_path]
+    plt.plot(x, y, "", label="A* Path")
+    plt.plot(x1, y1, "", label="Simplified Path")
+    plt.plot(x2, y2, "", label="Smoothed Path")
+else:
+    print("No path found.")
 
 
 
