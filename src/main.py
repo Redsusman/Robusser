@@ -509,7 +509,7 @@ class AStar_Path_Follower:
                     if self.is_collision(interp_x, interp_y):
                         return True
         return False
-j
+        
     def calculate_arc_length(self, trajectory):
         dist = 0.0
         for i in range(1, len(trajectory)):
