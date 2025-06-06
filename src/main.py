@@ -1,7 +1,6 @@
 from vex import *
 import math
 
-
 class Elevator:
     def __init__(self, brain: Brain):
         self.pneumatic = Pneumatics(brain.three_wire_port.g)
@@ -12,7 +11,6 @@ class Elevator:
     def down(self):
         self.pneumatic.open()
 
-
 def linspace(start, stop, num):
     if num <= 0:
         return []
@@ -21,15 +19,12 @@ def linspace(start, stop, num):
     step = (stop - start) / (num - 1)
     return [start + step * i for i in range(num)]
 
-
 def sign(x):
     """Return the sign of x."""
     return (x > 0) - (x < 0)
 
-
 def hypot(x, y):
     return math.sqrt(x**2 + y**2)
-
 
 def _siftdown(heap, startpos, pos):
     newitem = heap[pos]
@@ -42,7 +37,6 @@ def _siftdown(heap, startpos, pos):
             continue
         break
     heap[pos] = newitem
-
 
 def _siftup(heap, pos):
     endpos = len(heap)
@@ -59,11 +53,9 @@ def _siftup(heap, pos):
     heap[pos] = newitem
     _siftdown(heap, startpos, pos)
 
-
 def heappush(heap, item):
     heap.append(item)
     _siftdown(heap, 0, len(heap) - 1)
-
 
 def heappop(heap):
     lastelt = heap.pop()
@@ -74,19 +66,16 @@ def heappop(heap):
         return returnitem
     return lastelt
 
-
 def heapify(heap):
     n = len(heap)
     for i in reversed(range(n // 2)):
         _siftup(heap, i)
-
 
 class Point:
     def __init__(self, x: float, y: float):
         self.x = x
         self.y = y
         self.point = (x, y)
-
 
 def transform_global_to_local(
     global_list: list[Point], local_origin: Point, theta: float
@@ -100,7 +89,6 @@ def transform_global_to_local(
         y_local = -dx * math.sin(theta) + dy * math.cos(theta)
         local_points.append(Point(x_local, y_local))
     return local_points
-
 
 class PIDController:
     def __init__(self, kp: float, ki: float, kd: float):
@@ -122,7 +110,6 @@ class PIDController:
     def get_error(self):
         return self.previous_error
 
-
 class Distance_Sensor:
     def __init__(self):
         self.recorded = 0.0
@@ -134,7 +121,6 @@ class Distance_Sensor:
     def continous_distance(self):
         while True:
             self.recorded_distance = self.get_distance()
-
 
 class Drive:
     def __init__(
@@ -250,11 +236,9 @@ class Drive:
             if abs(angle_diff) < math.radians(2):
                 self.stop_drive()
                 break
-
             omega = self.theta_controller.compute(current_angle, angle_rad, 0.1)
             self.drive(0, omega)
             wait(10, MSEC)
-
 
 class Chaikin_Smooth:
     def __init__(self, points: list[Point]):
@@ -276,7 +260,6 @@ class Chaikin_Smooth:
             new_points.append(self.points[-1])
             self.points = new_points
         return self.points
-
 
 class Stanley_Controller:
     def __init__(self, drive: Drive, k: float, vel, lookahead):
@@ -309,7 +292,6 @@ class Stanley_Controller:
             shortest_point.point[0] - robot_pose[0],
             shortest_point.point[1] - robot_pose[1],
         )
-
         heading_correction = heading_kP * heading_error
         cte_correction = cte_kP * cross_track_error
         dist_correction = dist_kP * dist_error
@@ -332,13 +314,10 @@ class Stanley_Controller:
                 distance_to_end = math.sqrt(dx**2 + dy**2)
             else:
                 drive.stop_drive()
-            print(object_distance)
-
             if distance_to_end < 0.2:
                 bool_drive = False
                 self.drive.stop_drive()
                 break
-
 
 class Pose:
     def __init__(self, x, y, theta):
@@ -346,7 +325,6 @@ class Pose:
         self.y = y
         self.theta = theta
         self.pose = (x, y, theta)
-
 
 class Node:
     def __init__(self, x, y, theta, value, resolution=0.1, angle_resolution=0.1):
@@ -381,20 +359,16 @@ class Node:
     def __hash__(self):
         return hash((self.idx, self.idy, self.theta))
 
-
 def calculate_optimal_path(pose_a, pose_b, num_points) -> list[Pose]:
     p0 = [pose_a.x, pose_a.y]
     p1 = [pose_b.x, pose_b.y]
-
     dist = hypot(p1[0] - p0[0], p1[1] - p0[1])
     v0 = [math.cos(pose_a.theta) * dist * 0.5, math.sin(pose_a.theta) * dist * 0.5]
     v1 = [math.cos(pose_b.theta) * dist * 0.5, math.sin(pose_b.theta) * dist * 0.5]
-
     h00 = lambda t: (1 - 3 * t**2 + 2 * t**3)
     h10 = lambda t: (t - 2 * t**2 + t**3)
     h01 = lambda t: (3 * t**2 - 2 * t**3)
     h11 = lambda t: (-(t**2) + t**3)
-
     points = []
     for i in range(num_points):
         t = i / (num_points - 1)
@@ -402,7 +376,6 @@ def calculate_optimal_path(pose_a, pose_b, num_points) -> list[Pose]:
         position_y = h00(t) * p0[1] + h10(t) * v0[1] + h01(t) * p1[1] + h11(t) * v1[1]
         points.append(Pose(position_x, position_y, 0.0))
     return points
-
 
 class AStar_Path_Follower:
     def __init__(self, map_grid, robot_radius):
@@ -509,7 +482,7 @@ class AStar_Path_Follower:
                     if self.is_collision(interp_x, interp_y):
                         return True
         return False
-        
+
     def calculate_arc_length(self, trajectory):
         dist = 0.0
         for i in range(1, len(trajectory)):
