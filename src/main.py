@@ -303,7 +303,7 @@ class Stanley_Controller:
         bool_drive = True
         while bool_drive:
             object_distance = distance_sensor.object_distance(DistanceUnits.IN)
-            if object_distance >= 20:
+            if object_distance >= 30:
                 dist_correction, omega = self.calculate_feedback(
                     path, heading_kP, cte_kP, dist_kP
                 )
@@ -591,9 +591,9 @@ grid = [
     [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
     [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
     [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-    [1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1],
-    [1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
-    [1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1],
     [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1],
     [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
     [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
@@ -609,10 +609,12 @@ grid = [
 finder = AStar_Path_Follower(grid, robot_radius=1.5)
 path = finder.find_path(
     Node(1, 0, math.pi / 2, 0),
-    Node(8, 7, 0 - 0.3, 0),
+    Node(7.7,7.05,0-0.4, 0),
     v_max=0.1,
     ω_max=math.pi / 8,
 )
+
+# path = finder.find_path(Node(7.75,7,0-0.3,0), Node())
 node_grid = finder.node_grid
 brain = Brain()
 controller = Controller()
