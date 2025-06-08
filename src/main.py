@@ -640,3 +640,28 @@ while drive.imu.is_calibrating():
     wait(100, MSEC)
 stanley_thread = Thread(lambda: run())
 odometry_thread = Thread(drive.update_pose())
+
+
+class State_Machine:
+    def __init__(self, odometry_thread: Thread, stanley_thread: Thread):
+        self.state = self.State.Idle  # Initialize the state attribute with a default value
+        self.odometry_thread = odometry_thread
+        self.stanley_thread = stanley_thread
+    from enum import Enum
+    
+    class State(Enum):
+        Idle = 1
+        Delivery = 2
+    def autonomous(self):
+        match self.state:
+            case self.State.Idle:
+                drive.reset_pose(1, 0, 0)
+                self.odometry_thread.start()
+                self.stanley_thread.start()
+                self.state = self.State.Delivery
+            case self.State.Delivery:
+                if not stanley_thread:
+                    drive.stop_drive()
+                    elevator.down()
+                    self.state = self.State.Idle
+        

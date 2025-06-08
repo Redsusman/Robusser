@@ -750,7 +750,7 @@ astar.inflate_grid(0)
 
 # # Define start and end nodes
 start = astar.node_grid[1][0]  # Top-left corner
-end = astar.node_grid[30][3]  # Bottom-right corner
+end = astar.node_grid[16][10]  # Bottom-right corner
 
 # Find the path
 path = astar.find_path(start, end)

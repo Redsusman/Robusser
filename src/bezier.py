@@ -299,6 +299,42 @@ class AStar_Path_Follower:
             round(node.y / resolution) * resolution, 
             round(node.theta / resolution) * resolution)
 
+def simplify_path(points, epsilon):
+    """Ramer-Douglas-Peucker path simplification for Point class"""
+    if len(points) < 3:
+        return points.copy()
+    
+    # Find point with maximum distance
+    dmax = 0
+    index = 0
+    end = len(points) - 1
+    
+    for i in range(1, end):
+        d = perpendicular_distance(points[i], points[0], points[end])
+        if d > dmax:
+            index = i
+            dmax = d
+    
+    # If max distance > epsilon, recursively simplify
+    if dmax > epsilon:
+        left = simplify_path(points[:index+1], epsilon)
+        right = simplify_path(points[index:], epsilon)
+        return left[:-1] + right
+    else:
+        return [points[0], points[end]]
+
+def perpendicular_distance(point, line_start, line_end):
+    """Calculate perpendicular distance from Point to line segment"""
+    x, y = point.point
+    x1, y1 = line_start.point
+    x2, y2 = line_end.point
+    
+    if x1 == x2 and y1 == y2:
+        return math.hypot(x-x1, y-y1)
+    
+    numerator = abs((x2-x1)*(y1-y) - (x1-x)*(y2-y1))
+    denominator = math.hypot(x2-x1, y2-y1)
+    return numerator / denominator
 
 
 
@@ -337,11 +373,11 @@ grid =  [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
 finder = AStar_Path_Follower(grid, robot_radius=1.5)
 
 path = finder.find_path(
-    Node(1,0, math.pi/2, 0),
-    Node(7.8,7,0-0.2, 0),
-    v_max=0.1,
+    Node(7,7,3*math.pi/2, 0),
+    Node(1,1,math.pi/2, 0),
+    v_max=0.5,
     ω_max=math.pi/8,
-)
+) #default, v_max = 0.1, ω_max = math.pi/8
 # path = calculate_optimal_path(Pose(8,7,math.pi), Pose(0,0,-math.pi/2), 15)
 
 # path = calculate_optimal_path(Pose(4, 6, 0), Pose(8, 15, 0), 15)
@@ -419,6 +455,8 @@ searched_x = []
 searched_y = []
 path_transformx = []
 path_transformy = []
+simplified_x = []
+simplified_y = []
 if path:
     print(len(path))
 # Plot the path if it exists
@@ -426,6 +464,7 @@ if path:
     chaikin = Chaikin_Smooth([Point (pose.x, pose.y) for pose in path])  # Convert Pose to Point
     smoothed_path = chaikin.smooth_path(num_iterations=4)  # Smooth the path
     transformed_path = transform_global_to_local(smoothed_path, Point(1, 0), math.pi/2)  # Transform to local coordinates
+    simplified_path = simplify_path([Point(pose.x, pose.y) for pose in smoothed_path], epsilon=0.05)
     for pose in path:
         path_x.append(pose.x) # X-coordinates of the path
         path_y.append(pose.y)  # Y-coordinates of the path
@@ -435,16 +474,21 @@ if path:
     for pose in transformed_path:
         path_transformx.append(pose.x)
         path_transformy.append(pose.y)
+    for pose in simplified_path:
+        simplified_x.append(pose.x)
+        simplified_y.append(pose.y)
 
 
 for pose in searched_poses:
     searched_x.append(pose.x)  # X-coordinates of the searched poses
     searched_y.append(pose.y)  # Y-coordinates of the searched poses
 
-# plt.plot(path_x, path_y, linestyle="-", color="green", label="Path Points")
+plt.plot(path_x, path_y, linestyle="-", color="green", label="Path Points")
 plt.plot(path_smoothx, path_smoothy, linestyle="--", color="purple", label="Smoothed Path")
 plt.plot(path_transformx, path_transformy, linestyle="-", color="blue", label="Transformed Path")
 plt.scatter(searched_x, searched_y, linestyle="-",color="orange", s=10, label="Searched Points")
+plt.scatter(simplified_x, simplified_y, linestyle="-",color="black", s=30, label="Simplified Path")
+plt.plot(simplified_x, simplified_y, linestyle="--", color="red", label="Smoothed Path")
 
 
     # plt.scatter(
