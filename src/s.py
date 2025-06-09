@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import math
 from matplotlib.animation import FuncAnimation
 
+
 def _siftdown(heap, startpos, pos):
     newitem = heap[pos]
     while pos > startpos:
@@ -15,24 +16,27 @@ def _siftdown(heap, startpos, pos):
         break
     heap[pos] = newitem
 
+
 def _siftup(heap, pos):
     endpos = len(heap)
     startpos = pos
     newitem = heap[pos]
-    childpos = 2*pos + 1
+    childpos = 2 * pos + 1
     while childpos < endpos:
         rightpos = childpos + 1
         if rightpos < endpos and not heap[childpos].f < heap[rightpos].f:
             childpos = rightpos
         heap[pos] = heap[childpos]
         pos = childpos
-        childpos = 2*pos + 1
+        childpos = 2 * pos + 1
     heap[pos] = newitem
     _siftdown(heap, startpos, pos)
 
+
 def heappush(heap, item):
     heap.append(item)
-    _siftdown(heap, 0, len(heap)-1)
+    _siftdown(heap, 0, len(heap) - 1)
+
 
 def heappop(heap):
     lastelt = heap.pop()
@@ -43,18 +47,23 @@ def heappop(heap):
         return returnitem
     return lastelt
 
+
 def heapify(heap):
     n = len(heap)
-    for i in reversed(range(n//2)):
+    for i in reversed(range(n // 2)):
         _siftup(heap, i)
-        
+
+
 class Point:
     def __init__(self, x: float, y: float):
         self.x = x
         self.y = y
         self.point = (x, y)
 
-def transform_global_to_local(global_list: list[Point], local_origin: Point, theta: float) -> list[Point]:
+
+def transform_global_to_local(
+    global_list: list[Point], local_origin: Point, theta: float
+) -> list[Point]:
     """Transform global coordinates to local coordinates."""
     local_points = []
     for global_point in global_list:
@@ -64,6 +73,7 @@ def transform_global_to_local(global_list: list[Point], local_origin: Point, the
         y_local = -dx * np.sin(theta) + dy * np.cos(theta)
         local_points.append(Point(x_local, y_local))
     return local_points
+
 
 class PIDController:
     def __init__(self, kp: float, ki: float, kd: float):
@@ -128,17 +138,23 @@ class Drive:
         self.theta_list = [theta]
 
     def pid_test_to_point(self, start_point: Point, end_point: Point, dt: float):
-        distance_to_target = math.hypot(end_point.point[0] - self.x, end_point.point[1] - self.y)
-        angle_to_target = math.atan2(end_point.point[1] - start_point.point[1], end_point.point[0] - start_point.point[0])
+        distance_to_target = math.hypot(
+            end_point.point[0] - self.x, end_point.point[1] - self.y
+        )
+        angle_to_target = math.atan2(
+            end_point.point[1] - start_point.point[1],
+            end_point.point[0] - start_point.point[0],
+        )
         control_forward = self.pid_forward.compute(float(distance_to_target), 0, dt)
         control_omega = self.pid_omega.compute(self.theta, angle_to_target, dt)
         return -control_forward, control_omega, distance_to_target
-    
-    def pid_to_points(self,points: list[Point], dt: float):
+
+    def pid_to_points(self, points: list[Point], dt: float):
         for i in range(len(points) - 1):
-            forward, omega, _= self.pid_test_to_point(points[i], points[i+1],dt)
+            forward, omega, _ = self.pid_test_to_point(points[i], points[i + 1], dt)
             vl, vr = self.inverse(forward, omega)
             self.forward(vl, vr, dt)
+
 
 class Chaikin_Smooth:
     def __init__(self, points: list[Point]):
@@ -148,8 +164,8 @@ class Chaikin_Smooth:
         for _ in range(num_iterations):
             new_points = []
             for i in range(len(self.points) - 1):
-                p0 = (self.points[i].point)
-                p1 = (self.points[i + 1].point)
+                p0 = self.points[i].point
+                p1 = self.points[i + 1].point
                 q = (0.75 * p0[0] + 0.25 * p1[0], 0.75 * p0[1] + 0.25 * p1[1])
                 r = (0.25 * p0[0] + 0.75 * p1[0], 0.25 * p0[1] + 0.75 * p1[1])
                 q_point = Point(q[0], q[1])
@@ -186,12 +202,19 @@ class Pure_Pursuit_Controller:
         robot_pose = (self.drive.x, self.drive.y)
         for i in range(len(path) - 1):
             first_point = path[i].point
-            second_point = path[i+1].point
+            second_point = path[i + 1].point
             dx = second_point[0] - first_point[0]
             dy = second_point[1] - first_point[1]
             a = dx**2 + dy**2
-            b = 2 * (dx * (first_point[0] - robot_pose[0]) + dy * (first_point[1] - robot_pose[1]))
-            c = (first_point[0] - robot_pose[0])**2 + (first_point[1] - robot_pose[1])**2 - lookahead**2
+            b = 2 * (
+                dx * (first_point[0] - robot_pose[0])
+                + dy * (first_point[1] - robot_pose[1])
+            )
+            c = (
+                (first_point[0] - robot_pose[0]) ** 2
+                + (first_point[1] - robot_pose[1]) ** 2
+                - lookahead**2
+            )
             discriminant = b**2 - 4 * a * c
             if discriminant < 0:
                 continue
@@ -201,28 +224,27 @@ class Pure_Pursuit_Controller:
                 intersection_y = first_point[1] + t * dy
                 return (intersection_x, intersection_y)
 
-    def calculate(self, path: list[Point]):
-        self.lookahead_distance = (
-            self.lookahead_distance
-            + self.distance_parameter * self.drive.speed
-            - self.curvature_parameter * self.previous_curvature
-        )
-        robot_pose = (self.drive.x, self.drive.y)
-        theta = self.drive.theta
-        lookahead_point = self.compute_intersection_circle(path, self.lookahead_distance)
-        if lookahead_point is None:
-            return 0.0
-        dx = lookahead_point[0] - robot_pose[0]
-        dy = lookahead_point[1] - robot_pose[1]
-        alpha = math.atan2(dy, dx) - theta
-        alpha = math.atan2(math.sin(alpha), math.cos(alpha))
-        dist = math.sqrt(dx**2 + dy**2)
-        if abs(dist) < 1e-10:
-            curvature = 0.0
-        else:
-            curvature = (2.0 * math.sin(alpha)) / dist
-        return curvature
-        
+    # def calculate(self, path: list[Point]):
+    #     self.lookahead_distance = (
+    #         self.lookahead_distance
+    #         + self.distance_parameter * self.drive.speed
+    #         - self.curvature_parameter * self.previous_curvature
+    #     )
+    #     robot_pose = (self.drive.x, self.drive.y)
+    #     theta = self.drive.theta
+    #     lookahead_point = self.compute_intersection_circle(path, self.lookahead_distance)
+    #     if lookahead_point is None:
+    #         return 0.0
+    #     dx = lookahead_point[0] - robot_pose[0]
+    #     dy = lookahead_point[1] - robot_pose[1]
+    #     alpha = math.atan2(dy, dx) - theta
+    #     alpha = math.atan2(math.sin(alpha), math.cos(alpha))
+    #     dist = math.sqrt(dx**2 + dy**2)
+    #     if abs(dist) < 1e-10:
+    #         curvature = 0.0
+    #     else:
+    #         curvature = (2.0 * math.sin(alpha)) / dist
+    #     return curvature
 
     # def calculate(self, path: list[Point]):
     #     self.lookahead_distance = (
@@ -255,35 +277,35 @@ class Pure_Pursuit_Controller:
     #         curvature = (2.0 * math.sin(alpha)) / dist
     #     self.previous_curvature = curvature
     #     return curvature
-    # def calculate(self, path: list[Point]):
-    #     self.lookahead_distance = (
-    #         self.lookahead_distance
-    #         + self.distance_parameter * self.drive.speed
-    #         - self.curvature_parameter * self.previous_curvature
-    #     )
-    #     robot_pose = np.array([self.drive.x, self.drive.y])
-    #     path_to_array = np.array([point.point for point in path])
-    #     theta = self.drive.theta
-    #     distances = np.linalg.norm(path_to_array - robot_pose, axis=1)
-    #     closest_idx = np.argmin(distances)
-    #     for i in range(closest_idx, len(path_to_array)):
-    #         dist = np.linalg.norm(path_to_array[i] - robot_pose)
-    #         if dist >= self.lookahead_distance:
-    #             lookahead_point = path_to_array[i]
-    #             break
-    #     else:
-    #         lookahead_point = path_to_array[-1]
+    def calculate(self, path: list[Point]):
+        self.lookahead_distance = (
+            self.lookahead_distance
+            + self.distance_parameter * self.drive.speed
+            - self.curvature_parameter * self.previous_curvature
+        )
+        robot_pose = np.array([self.drive.x, self.drive.y])
+        path_to_array = np.array([point.point for point in path])
+        theta = self.drive.theta
+        distances = np.linalg.norm(path_to_array - robot_pose, axis=1)
+        closest_idx = np.argmin(distances)
+        for i in range(closest_idx, len(path_to_array)):
+            dist = np.linalg.norm(path_to_array[i] - robot_pose)
+            if dist >= self.lookahead_distance:
+                lookahead_point = path_to_array[i]
+                break
+        else:
+            lookahead_point = path_to_array[-1]
 
-    #     dx, dy = lookahead_point - robot_pose
-    #     alpha = np.arctan2(dy, dx) - theta
-    #     dist = np.linalg.norm(lookahead_point - robot_pose)
-    #     curvature = (2 * np.sin(alpha)) / dist
-    #     self.previous_curvature = curvature
-    #     return curvature
+        dx, dy = lookahead_point - robot_pose
+        alpha = np.arctan2(dy, dx) - theta
+        dist = np.linalg.norm(lookahead_point - robot_pose)
+        curvature = (2 * np.sin(alpha)) / dist
+        self.previous_curvature = curvature
+        return curvature
 
     def follow_path(self, path: list[Point]):
         dt = 0.1
-        for t in range(1000):
+        for t in range(3000):
             curvature = self.calculate(path)
             scaled_velocity = self.forward_velocity * np.clip(
                 1 / (abs(curvature) + 1e-6), 0.5, 1
@@ -298,28 +320,36 @@ class Pure_Pursuit_Controller:
             ):
                 break
 
+
 class Stanley_Controller:
     def __init__(self, drive: Drive, k: float, vel, lookahead):
         self.drive = drive
         self.k = k
         self.vel = vel
         self.lookahead = lookahead
-        self.speed_controller = PIDController(2.0,0.0,0)
-        self.cte_controller = PIDController(2.0,0,0)
-        self.theta_controller = PIDController(1,0,0)
+        self.speed_controller = PIDController(2.0, 0.0, 0)
+        self.cte_controller = PIDController(2.0, 0, 0)
+        self.theta_controller = PIDController(1, 0, 0)
         pass
-    
+
     def calculate(self, path: list[Point]):
         robot_pose = (self.drive.x, self.drive.y)
         theta = self.drive.theta
-        distances = [math.hypot(p.point[0] - robot_pose[0], p.point[1] - robot_pose[1]) for p in path]
+        distances = [
+            math.hypot(p.point[0] - robot_pose[0], p.point[1] - robot_pose[1])
+            for p in path
+        ]
         closest_idx = distances.index(min(distances))
         shortest_point = path[closest_idx]
-        next_point = path[closest_idx + 1] if closest_idx + 1 < len(path) else shortest_point
+        next_point = (
+            path[closest_idx + 1] if closest_idx + 1 < len(path) else shortest_point
+        )
         dx = next_point.point[0] - shortest_point.point[0]
         dy = next_point.point[1] - shortest_point.point[1]
         path_heading = math.atan2(dy, dx)
-        heading_error = math.atan2(math.sin(path_heading - theta), math.cos(path_heading - theta))
+        heading_error = math.atan2(
+            math.sin(path_heading - theta), math.cos(path_heading - theta)
+        )
         rx = robot_pose[0] - shortest_point.point[0]
         ry = robot_pose[1] - shortest_point.point[1]
         cross_track_error = rx * math.sin(path_heading) - ry * math.cos(path_heading)
@@ -332,14 +362,19 @@ class Stanley_Controller:
     def calculate_feedback(self, path: list[Point], heading_kP, cte_kP, dist_kP):
         robot_pose = (self.drive.x, self.drive.y)
         theta = self.drive.theta
-        distances = [math.hypot(p.point[0] - robot_pose[0], p.point[1] - robot_pose[1]) for p in path]
+        distances = [
+            math.hypot(p.point[0] - robot_pose[0], p.point[1] - robot_pose[1])
+            for p in path
+        ]
         closest_idx = distances.index(min(distances))
         shortest_point = path[closest_idx]
-        next_point = path[closest_idx + 1] if closest_idx + 1 < len(path) else shortest_point
+        next_point = (
+            path[closest_idx + 1] if closest_idx + 1 < len(path) else shortest_point
+        )
         dx = next_point.point[0] - shortest_point.point[0]
         dy = next_point.point[1] - shortest_point.point[1]
         path_heading = math.atan2(dy, dx)
-        heading_error = path_heading-theta
+        heading_error = path_heading - theta
         heading_error = math.atan2(math.sin(heading_error), math.cos(heading_error))
         rx = robot_pose[0] - shortest_point.point[0]
         ry = robot_pose[1] - shortest_point.point[1]
@@ -347,25 +382,29 @@ class Stanley_Controller:
         # v = max(self.drive.speed, 0.1)
         # steering_angle = heading_error + math.atan((self.k * cross_track_error) / v)
         # steering_radius = self.drive.wheel_base / (math.tan(steering_angle) + 1e-6)
-        dist_error = math.hypot(shortest_point.point[0]-robot_pose[0], shortest_point.point[1] - robot_pose[1])
+        dist_error = math.hypot(
+            shortest_point.point[0] - robot_pose[0],
+            shortest_point.point[1] - robot_pose[1],
+        )
 
-        heading_correction = heading_kP*heading_error
-        cte_correction = cte_kP*cross_track_error
-        dist_correction = dist_kP*dist_error
+        heading_correction = heading_kP * heading_error
+        cte_correction = cte_kP * cross_track_error
+        dist_correction = dist_kP * dist_error
 
         print(cte_correction, dist_correction)
         # heading_correction = -self.theta_controller.compute(heading_error, 0,0.01)
         # cte_correction = -self.cte_controller.compute(heading_error, 0,0.01)
         # dist_correction = self.speed_controller.compute(heading_error, 0,0.01)
-        
 
-        return dist_correction, cte_correction+heading_correction
+        return dist_correction, cte_correction + heading_correction
 
-    def follow_path_feedback(self, path: list[Point],heading_kP, cte_kP, dist_kP):
+    def follow_path_feedback(self, path: list[Point], heading_kP, cte_kP, dist_kP):
         dt = 0.1
         for t in range(1000):
-            dist_correction, omega = self.calculate_feedback(path,heading_kP, cte_kP, dist_kP)
-            v = 0.5+dist_correction
+            dist_correction, omega = self.calculate_feedback(
+                path, heading_kP, cte_kP, dist_kP
+            )
+            v = 0.5 + dist_correction
             vl, vr = self.drive.inverse(v, omega)
             # print(v,omega)
             self.drive.forward(vl, vr, dt)
@@ -376,7 +415,7 @@ class Stanley_Controller:
                 < 0.5
             ):
                 break
-    
+
     def follow_path(self, path: list[Point]):
         dt = 0.1
         for t in range(1000):
@@ -384,7 +423,7 @@ class Stanley_Controller:
             # scaled_velocity = self.vel * np.clip(
             #     1 / (abs(curvature) + 1e-6), 0.5, 1
             # )
-            vl, vr = self.drive.inverse(self.vel, self.vel/(radius + 1e-7))
+            vl, vr = self.drive.inverse(self.vel, self.vel / (radius + 1e-7))
             self.drive.forward(vl, vr, dt)
             if (
                 np.linalg.norm(
@@ -442,7 +481,7 @@ class AStar_Path_Follower:
             current = current.parent
         path.reverse()
         return path
-    
+
     def inflate_grid(self, inflation_radius: int):
         inflation_radius_cells = inflation_radius  # Since each cell is 1 ft
         rows = len(self.node_grid)
@@ -454,9 +493,15 @@ class AStar_Path_Follower:
             for node in row:
                 if node.value == 1:
                     x, y = node.idx, node.idy
-                    for dx in range(-inflation_radius_cells, inflation_radius_cells + 1):
-                        for dy in range(-inflation_radius_cells, inflation_radius_cells + 1):
-                            if abs(dx) + abs(dy) <= inflation_radius_cells:  # Manhattan distance
+                    for dx in range(
+                        -inflation_radius_cells, inflation_radius_cells + 1
+                    ):
+                        for dy in range(
+                            -inflation_radius_cells, inflation_radius_cells + 1
+                        ):
+                            if (
+                                abs(dx) + abs(dy) <= inflation_radius_cells
+                            ):  # Manhattan distance
                                 nx, ny = x + dx, y + dy
                                 if 0 <= nx < rows and 0 <= ny < cols:
                                     to_inflate.add((nx, ny))
@@ -491,10 +536,10 @@ class AStar_Path_Follower:
                     heappush(open, child)
 
         return None
-    
 
     def find_path_dstar_lite(self):
         pass
+
 
 class DWA_Controller:
     def __init__(
@@ -594,38 +639,40 @@ def simplify_path(points, epsilon):
     """Ramer-Douglas-Peucker path simplification for Point class"""
     if len(points) < 3:
         return points.copy()
-    
+
     # Find point with maximum distance
     dmax = 0
     index = 0
     end = len(points) - 1
-    
+
     for i in range(1, end):
         d = perpendicular_distance(points[i], points[0], points[end])
         if d > dmax:
             index = i
             dmax = d
-    
+
     # If max distance > epsilon, recursively simplify
     if dmax > epsilon:
-        left = simplify_path(points[:index+1], epsilon)
+        left = simplify_path(points[: index + 1], epsilon)
         right = simplify_path(points[index:], epsilon)
         return left[:-1] + right
     else:
         return [points[0], points[end]]
+
 
 def perpendicular_distance(point, line_start, line_end):
     """Calculate perpendicular distance from Point to line segment"""
     x, y = point.point
     x1, y1 = line_start.point
     x2, y2 = line_end.point
-    
+
     if x1 == x2 and y1 == y2:
-        return math.hypot(x-x1, y-y1)
-    
-    numerator = abs((x2-x1)*(y1-y) - (x1-x)*(y2-y1))
-    denominator = math.hypot(x2-x1, y2-y1)
+        return math.hypot(x - x1, y - y1)
+
+    numerator = abs((x2 - x1) * (y1 - y) - (x1 - x) * (y2 - y1))
+    denominator = math.hypot(x2 - x1, y2 - y1)
     return numerator / denominator
+
 
 class USB_Server_Communicator:
     def __init__(self):
@@ -650,6 +697,7 @@ class USB_Server_Communicator:
 class Elevator:
     def __init__(self):
         self = None
+
 
 class Potential_Field_Method:
     def __init__(self):
@@ -678,8 +726,8 @@ class Potential_Field_Method:
 # Main loop to control the vehicle and update the plot
 # print("Use 'W', 'A', 'S', 'D' to move the vehicle. Press 'Space' to stop.")
 
-    # Print the current position and orientation
-    # print(f"x: {drive.x:.2f}, y: {drive.y:.2f}, theta: {math.degrees(drive.theta):.2f}")
+# Print the current position and orientation
+# print(f"x: {drive.x:.2f}, y: {drive.y:.2f}, theta: {math.degrees(drive.theta):.2f}")
 
 # start_point = Point(0,0)
 # end_point = Point(12,0)
@@ -692,7 +740,7 @@ class Potential_Field_Method:
 #         drive.forward(vl,vr,0.01)
 #     else:
 #         break
-    
+
 
 # x = [x for x in drive.x_list]
 # y = [y for y in drive.y_list]
@@ -712,37 +760,39 @@ class Potential_Field_Method:
 # # row = 10
 # col = 10
 
-grid =  [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
-        [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
-        [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
-        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0],
-        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-        [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
-        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1],
-        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
-        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1],
-        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
-        [1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
+grid = [
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0],
+    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+    [1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
+    [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
+    [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1],
+    [1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 1],
+    [1, 1, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+    [1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
+    [1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+]
 astar = AStar_Path_Follower(grid)
 astar_two = AStar_Path_Follower(grid)
 astar.inflate_grid(0)
@@ -762,62 +812,45 @@ else:
 
 node_grid = astar_two.node_grid
 
-x = []
-y = []
-colors = []
+drive = Drive(0, 0, 0, 2, 3)
+drive_2 = Drive(0, 0, 0, 2, 3)
+# transformed_path = transform_global_to_local(simplified_path, Point(1,0), math.pi/2)
+# smooth = Chaikin_Smooth(simplified_path)
 
-for row in node_grid:
-    for node in row:
-        x.append(node.idx)  # Assuming node.x contains the x-coordinate
-        y.append(node.idy)  # Assuming node.y contains the y-coordinate
-        colors.append("red" if node.value == 1 else "blue")  # Color based on node value
-
-# Plot the grid
-
-plt.figure(figsize=(10, 10))
-plt.scatter(x, y, c=colors, s=10)  # Ensure 'c' matches the size of 'x' and 'y'
-plt.xlabel("X Coordinate")
-plt.ylabel("Y Coordinate")
-plt.title("Inflated Grid Visualization")
-plt.grid()
-
-
-drive = Drive(0,0,0,2,3)
-transformed_path = transform_global_to_local(simplified_path, Point(1,0), math.pi/2)
-smooth = Chaikin_Smooth(simplified_path)
-
-# path = [Point(0,0), Point(1,0), Point(4,-4)]
-if transformed_path:
-    x = [point.x for point in transformed_path]
-    y = [point.y for point in transformed_path]
-    x1 = [point.point[0] for point in simplified_path]
-    y1 = [point.point[1] for point in simplified_path]
-    smoothed_path = smooth.smooth_path(4)
-    x2= [point.point[0] for point in smoothed_path]
-    y2= [point.point[1] for point in smoothed_path]
-    plt.plot(x, y, "", label="A* Path")
-    plt.plot(x1, y1, "", label="Simplified Path")
-    plt.plot(x2, y2, "", label="Smoothed Path")
-else:
-    print("No path found.")
+# # path = [Point(0,0), Point(1,0), Point(4,-4)]
+# if transformed_path:
+#     x = [point.x for point in transformed_path]
+#     y = [point.y for point in transformed_path]
+#     x1 = [point.point[0] for point in simplified_path]
+#     y1 = [point.point[1] for point in simplified_path]
+#     smoothed_path = smooth.smooth_path(4)
+#     x2= [point.point[0] for point in smoothed_path]
+#     y2= [point.point[1] for point in smoothed_path]
+#     plt.plot(x, y, "", label="A* Path")
+#     plt.plot(x1, y1, "", label="Simplified Path")
+#     plt.plot(x2, y2, "", label="Smoothed Path")
+# else:
+#     print("No path found.")
 
 
+# # drive = Drive(0, 0, 0, 10)
+dt = 0.01
+# # left_speed = 0
+# # right_speed = 0
 
-# # # plt.ion()
-# # # drive = Drive(0, 0, 0, 10)
-# dt = 0.01
-# # # left_speed = 0
-# # # right_speed = 0
+# control = Stanley_Controller(
+#     drive=drive, k=1.5, vel=0.1, lookahead = 0.0
+# )
+control = Stanley_Controller(drive, 5, 0.5, 0)
+pure = Pure_Pursuit_Controller(
+    drive_2, PIDController(1, 0, 0), PIDController(1, 0, 0), 1.0, 0.4, 0, 0
+)
 
-# # control = Stanley_Controller(
-# #     drive=drive, k=1.5, vel=0.1, lookahead = 0.0
-# # )
-# control = Stanley_Controller(drive, 5, 0.5, 0)
-
-# if path is not None:
-#     smoother = Chaikin_Smooth(path)
-#     smoothed_path = smoother.smooth_path(4)
-#     # control.follow_path(smoothed_path)
+if path is not None:
+    smoother = Chaikin_Smooth(path)
+    smoothed_path = smoother.smooth_path(4)
+    control.follow_path_feedback(smoothed_path, 2.0, 2.0, 0.5)
+    pure.follow_path(smoothed_path)
 # else:
 #     print("No valid path found. Cannot proceed with smoothing or following.")
 # plt.plot(
@@ -825,31 +858,60 @@ else:
 #     [x.point[1] for x in smoothed_path],
 #     label="True Path",
 # )
-# # plt.plot(drive.x_list, drive.y_list, label="Robot Path")
-# # plt.plot([x.point[0] for x in smoothed_path], [x.point[1] for x in smoothed_path], label="Path")
-# # # plt.plot([x.point[0] for x in path], [x.point[1] for x in path], label="Path")
-# # # plt.plot([point[0] for point in obstacles], [point[1] for point in obstacles], "ro", label="Obstacles")
-# # # plt.show(block=True)
-# # quiver = plt.quiver(
-# #     drive.x_list[0],  # Start at the first position
-# #     drive.y_list[0],
-# #     np.cos(drive.theta_list[0]),
-# #     np.sin(drive.theta_list[0]),
-# #     angles="xy",
-# #     scale_units="xy",
-# #     scale=1,
-# #     color="r",
-# # )
 
-# # def update(frame):
-# #     # Update the position (X, Y) and direction (U, V) of the quiver
-# #     quiver.set_offsets([drive.x_list[frame], drive.y_list[frame]])
-# #     quiver.set_UVC(
-# #         np.cos(drive.theta_list[frame]),
-# #         np.sin(drive.theta_list[frame]),
-# #     )
+# # Generate grid visualization
+plt.figure(figsize=(10, 8))
 
-# # anim = FuncAnimation(plt.gcf(), update, frames=len(drive.x_list), interval=1000 * dt)
+# Plot the occupancy grid
+x_grid = [node.idx for row in node_grid for node in row]
+y_grid = [node.idy for row in node_grid for node in row]
+colors = ["red" if node.value == 1 else "blue" for row in node_grid for node in row]
+plt.scatter(x_grid, y_grid, c=colors, s=10, alpha=0.5, label="Occupancy Grid")
+
+# Plot the planned path
+if path is not None:
+    smoother = Chaikin_Smooth(path)
+    smoothed_path = smoother.smooth_path(4)
+
+    # Reference path
+    plt.plot(
+        [p.point[0] for p in smoothed_path],
+        [p.point[1] for p in smoothed_path],
+        '--',
+        linewidth=2,
+        label="Smoothed Path (Chaikin)",
+    )
+
+    # Robot trajectory
+    plt.plot(
+        drive.x_list,
+        drive.y_list,
+        "r-",
+        linewidth=1.5,
+        label="Robot Path (Stanley Controller)",
+    )
+
+    plt.plot(
+        drive_2.x_list,
+        drive_2.y_list,
+        "g-",
+        linewidth=1.5,
+        label="Robot Path (Pure Pursuit)",
+    )
+else:
+    print("No valid path found")
+
+
+
+
+
+# Formatting
+plt.xlabel("X Coordinate (meters)", fontsize=12)
+plt.ylabel("Y Coordinate (meters)", fontsize=12)
+plt.title("AGV Path Tracking\n(Stanley Controller + Chaikin Smoothing)", fontsize=14)
+plt.legend(loc="upper right")
+plt.grid(True, alpha=0.3)
+plt.axis("equal")
+plt.tight_layout()
 plt.show()
-    
-
+# To save: anim.save('path_tracking.mp4', writer='ffmpeg', fps=20)

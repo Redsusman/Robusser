@@ -377,7 +377,7 @@ def calculate_optimal_path(pose_a, pose_b, num_points) -> list[Pose]:
         points.append(Pose(position_x, position_y, 0.0))
     return points
 
-class AStar_Path_Follower:
+class HybridAStar_Path_Follower:
     def __init__(self, map_grid, robot_radius):
         self.map_grid = map_grid
         self.node_grid = [
@@ -606,7 +606,7 @@ grid = [
     [1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
 ]
 
-finder = AStar_Path_Follower(grid, robot_radius=1.5)
+finder = HybridAStar_Path_Follower(grid, robot_radius=1.5)
 path = finder.find_path(
     Node(1, 0, math.pi / 2, 0),
     Node(7.7,7.05,0-0.4, 0),
@@ -656,8 +656,8 @@ class State_Machine:
         match self.state:
             case self.State.Idle:
                 drive.reset_pose(1, 0, 0)
-                self.odometry_thread.start()
-                self.stanley_thread.start()
+                self.odometry_thread
+                self.stanley_thread
                 self.state = self.State.Delivery
             case self.State.Delivery:
                 if not stanley_thread:
