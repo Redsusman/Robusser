@@ -800,7 +800,7 @@ astar.inflate_grid(0)
 
 # # Define start and end nodes
 start = astar.node_grid[1][0]  # Top-left corner
-end = astar.node_grid[16][10]  # Bottom-right corner
+end = astar.node_grid[8][16]  # Bottom-right corner
 
 # Find the path
 path = astar.find_path(start, end)
@@ -849,7 +849,7 @@ pure = Pure_Pursuit_Controller(
 if path is not None:
     smoother = Chaikin_Smooth(path)
     smoothed_path = smoother.smooth_path(4)
-    control.follow_path_feedback(smoothed_path, 2.0, 2.0, 0.5)
+    control.follow_path_feedback(smoothed_path[::-1], 2.0, 2.0, 0.5)
     pure.follow_path(smoothed_path)
 # else:
 #     print("No valid path found. Cannot proceed with smoothing or following.")
@@ -874,22 +874,22 @@ if path is not None:
     smoothed_path = smoother.smooth_path(4)
 
     # Reference path
-    plt.plot(
-        [p.point[0] for p in smoothed_path],
-        [p.point[1] for p in smoothed_path],
-        '--',
-        linewidth=2,
-        label="Smoothed Path (Chaikin)",
-    )
+    # plt.plot(
+    #     [p.point[0] for p in smoothed_path],
+    #     [p.point[1] for p in smoothed_path],
+    #     '--',
+    #     linewidth=2,
+    #     label="Smoothed Path (Chaikin)",
+    # )
 
-    # Robot trajectory
-    plt.plot(
-        drive.x_list,
-        drive.y_list,
-        "r-",
-        linewidth=1.5,
-        label="Robot Path (Stanley Controller)",
-    )
+    # # Robot trajectory
+    # plt.plot(
+    #     drive.x_list,
+    #     drive.y_list,
+    #     "r-",
+    #     linewidth=1.5,
+    #     label="Robot Path (Stanley Controller)",
+    # )
 
     plt.plot(
         drive_2.x_list,

@@ -90,6 +90,13 @@ def transform_global_to_local(
         local_points.append(Point(x_local, y_local))
     return local_points
 
+def local_to_global(x,y,theta,local_origin):
+    dx = x + local_origin.x
+    dy = y + local_origin.y
+    x_global = dx * math.cos(theta) - dy * math.sin(theta)
+    y_global = dx * math.sin(theta) + dy * math.cos(theta)
+    return x_global,y_global, theta
+
 class PIDController:
     def __init__(self, kp: float, ki: float, kd: float):
         self.kp = kp
@@ -193,6 +200,7 @@ class Drive:
                 self.right_motor.position(RotationUnits.REV),
                 math.radians(self.imu.heading()),
             )
+            print(local_to_global(self.x,self.y,self.theta,Point(1,0)))
 
     def update_pose_static(self):
         self.odometer(
@@ -221,12 +229,12 @@ class Drive:
         self.left_motor.stop()
         self.right_motor.stop()
 
-    def drive(self, forward, omega):
+    def drive(self, forward, omega, direction=FORWARD):
         vl, vr = self.inverse(forward, omega)
         vl_rpm = (vl * 60) / (2 * math.pi * self.wheel_radius)
         vr_rpm = (vr * 60) / (2 * math.pi * self.wheel_radius)
-        self.left_motor.spin(FORWARD, vl_rpm, RPM)
-        self.right_motor.spin(FORWARD, vr_rpm, RPM)
+        self.left_motor.spin(direction, vl_rpm, RPM)
+        self.right_motor.spin(direction, vr_rpm, RPM)
 
     def turn_to_angle(self, angle_rad: float):
         while True:
@@ -267,8 +275,38 @@ class Stanley_Controller:
         self.k = k
         self.vel = vel
         self.lookahead = lookahead
+        self.vel_sign = 0.0
 
-    def calculate_feedback(self, path: list[Point], heading_kP, cte_kP, dist_kP):
+    # def calculate_feedback(self, path: list[Point], heading_kP, cte_kP, dist_kP):
+    #     robot_pose = (self.drive.x, self.drive.y)
+    #     theta = self.drive.theta
+    #     distances = [
+    #         hypot(p.point[0] - robot_pose[0], p.point[1] - robot_pose[1]) for p in path
+    #     ]
+    #     closest_idx = distances.index(min(distances))
+    #     shortest_point = path[closest_idx]
+    #     next_point = (
+    #         path[closest_idx + 1] if closest_idx + 1 < len(path) else shortest_point
+    #     )
+    #     dx = next_point.point[0] - shortest_point.point[0]
+    #     dy = next_point.point[1] - shortest_point.point[1]
+    #     path_heading = math.atan2(dy, dx)
+    #     heading_error = math.atan2(
+    #         math.sin(path_heading - theta), math.cos(path_heading - theta)
+    #     )
+    #     rx = robot_pose[0] - shortest_point.point[0]
+    #     ry = robot_pose[1] - shortest_point.point[1]
+    #     cross_track_error = rx * math.sin(path_heading) - ry * math.cos(path_heading)
+    #     dist_error = hypot(
+    #         shortest_point.point[0] - robot_pose[0],
+    #         shortest_point.point[1] - robot_pose[1],
+    #     )
+    #     heading_correction = heading_kP * heading_error
+    #     cte_correction = cte_kP * cross_track_error
+    #     dist_correction = dist_kP * dist_error
+    #     return dist_correction, cte_correction + heading_correction
+
+    def calculate_feedback(self, path: list[Point], heading_kP, cte_kP, dist_kP, reversed=False):
         robot_pose = (self.drive.x, self.drive.y)
         theta = self.drive.theta
         distances = [
@@ -281,42 +319,58 @@ class Stanley_Controller:
         )
         dx = next_point.point[0] - shortest_point.point[0]
         dy = next_point.point[1] - shortest_point.point[1]
-        path_heading = math.atan2(dy, dx)
+    
+    # Handle reverse motion
+        if reversed:
+            path_heading = math.atan2(-dy, -dx)  # Flip the direction
+        else:
+            path_heading = math.atan2(dy, dx)
+    
         heading_error = math.atan2(
-            math.sin(path_heading - theta), math.cos(path_heading - theta)
-        )
+            math.sin(path_heading - theta), math.cos(path_heading - theta))
+    
         rx = robot_pose[0] - shortest_point.point[0]
         ry = robot_pose[1] - shortest_point.point[1]
-        cross_track_error = rx * math.sin(path_heading) - ry * math.cos(path_heading)
+    
+    # Adjust CTE calculation for reverse motion
+        if reversed:
+            cross_track_error = -(rx * math.sin(path_heading) - ry * math.cos(path_heading))
+        else:
+            cross_track_error = rx * math.sin(path_heading) - ry * math.cos(path_heading)
+    
         dist_error = hypot(
             shortest_point.point[0] - robot_pose[0],
             shortest_point.point[1] - robot_pose[1],
         )
+    
         heading_correction = heading_kP * heading_error
         cte_correction = cte_kP * cross_track_error
         dist_correction = dist_kP * dist_error
+    
         return dist_correction, cte_correction + heading_correction
 
     def follow_path_feedback(
-        self, path: list[Point], heading_kP, cte_kP, dist_kP, distance_sensor: Distance
+        self, path: list[Point], heading_kP, cte_kP, dist_kP, distance_sensor: Distance, reversed=False
     ):
+        reversed_dir = FORWARD if not reversed else REVERSE
         bool_drive = True
         while bool_drive:
             object_distance = distance_sensor.object_distance(DistanceUnits.IN)
-            if object_distance >= 30:
+            if object_distance >=22:
                 dist_correction, omega = self.calculate_feedback(
-                    path, heading_kP, cte_kP, dist_kP
+                    path, heading_kP, cte_kP, dist_kP,reversed
                 )
-                v = self.vel + dist_correction
+                v = -self.vel + dist_correction if reversed else self.vel + dist_correction
                 self.drive.drive(v, omega)
                 dx = self.drive.x - path[-1].point[0]
                 dy = self.drive.y - path[-1].point[1]
                 distance_to_end = math.sqrt(dx**2 + dy**2)
             else:
                 drive.stop_drive()
-            if distance_to_end < 0.2:
+            if distance_to_end < 0.3:
                 bool_drive = False
                 self.drive.stop_drive()
+                print("done")
                 break
 
 class Pose:
@@ -345,6 +399,7 @@ class Node:
         self.path_from_parent: list[Pose] = []
         self.pose = Pose(self.x, self.y, self.theta)
         self.visited = False
+        self.velocity_sign = 0.0
 
     def __lt__(self, other):
         return self.f < other.f
@@ -562,6 +617,7 @@ class HybridAStar_Path_Follower:
                 child_node.h = self.heuristic(child_node.pose, end)
                 child_node.f = child_node.g + child_node.h
                 child_node.parent = current
+                child_node.velocity_sign = velocity_sign
                 heappush(open, child_node)
         return None
 
@@ -609,7 +665,7 @@ grid = [
 finder = HybridAStar_Path_Follower(grid, robot_radius=1.5)
 path = finder.find_path(
     Node(1, 0, math.pi / 2, 0),
-    Node(7.7,7.05,0-0.4, 0),
+    Node(7.7,7.55,0-0.2, 0),
     v_max=0.1,
     ω_max=math.pi / 8,
 )
@@ -619,7 +675,7 @@ node_grid = finder.node_grid
 brain = Brain()
 controller = Controller()
 drive = Drive(0, 0, 0, Ports.PORT1, Ports.PORT4, Ports.PORT3)
-control = Stanley_Controller(drive, 2.0, 0.3, 0.0)
+control = Stanley_Controller(drive, 2.0, 0.7, 0.0)
 elevator = Elevator(brain)
 distance_sensor = Distance_Sensor()
 if path is not None:
@@ -633,35 +689,38 @@ else:
     print("Pathfinding failed. No valid path found.")
 def run():
     control.follow_path_feedback(
-        transformed_path, 2.0, 2.0, 0.0, distance_sensor.sensor
+        transformed_path, 2.25, 2.25, 0.0, distance_sensor.sensor,False
     )
     elevator.down()
+    control.follow_path_feedback(transformed_path[::-1],2.25,2.25,0.0, distance_sensor.sensor, True)
 while drive.imu.is_calibrating():
     wait(100, MSEC)
 stanley_thread = Thread(lambda: run())
 odometry_thread = Thread(drive.update_pose())
+# controller.buttonA.pressed(lambda: elevator.down())
+# controller.buttonB.pressed(lambda: elevator.up())
 
 
-class State_Machine:
-    def __init__(self, odometry_thread: Thread, stanley_thread: Thread):
-        self.state = self.State.Idle  # Initialize the state attribute with a default value
-        self.odometry_thread = odometry_thread
-        self.stanley_thread = stanley_thread
-    from enum import Enum
+# class State_Machine:
+#     def __init__(self, odometry_thread: Thread, stanley_thread: Thread):
+#         self.state = self.State.Idle  # Initialize the state attribute with a default value
+#         self.odometry_thread = odometry_thread
+#         self.stanley_thread = stanley_thread
+    # from enum import Enum
     
-    class State(Enum):
-        Idle = 1
-        Delivery = 2
-    def autonomous(self):
-        match self.state:
-            case self.State.Idle:
-                drive.reset_pose(1, 0, 0)
-                self.odometry_thread
-                self.stanley_thread
-                self.state = self.State.Delivery
-            case self.State.Delivery:
-                if not stanley_thread:
-                    drive.stop_drive()
-                    elevator.down()
-                    self.state = self.State.Idle
+    # class State(Enum):
+    #     Idle = 1
+    #     Delivery = 2
+    # def autonomous(self):
+    #     match self.state:
+    #         case self.State.Idle:
+    #             drive.reset_pose(1, 0, 0)
+    #             self.odometry_thread
+    #             self.stanley_thread
+    #             self.state = self.State.Delivery
+    #         case self.State.Delivery:
+    #             if not stanley_thread:
+    #                 drive.stop_drive()
+    #                 elevator.down()
+    #                 self.state = self.State.Idle
         

@@ -5,6 +5,23 @@ import heapq
 
 searched_poses = []
 
+class Nodee:
+    def __init__(self, value, cell_idx, cell_idy):
+        self.value = value
+        self.idx = cell_idx
+        self.idy = cell_idy
+        self.g = 0
+        self.h = 0
+        self.f = 0
+        self.parent = None
+        self.neighbors = []
+        visited = False
+
+    def __lt__(self, other):
+        return self.f < other.f
+
+    def __eq__(self, other):
+        return self.idx == other.idx and self.idy == other.idy
 
 
 
@@ -44,6 +61,7 @@ class Node:
         self.path_from_parent: list[Pose] = []  # Add path_from_parent attribute with explicit type
         self.pose = Pose(self.x, self.y, self.theta)
         self.visited = False
+        self.velocity_sign = 0.0
 
     def __lt__(self, other):
         return self.f < other.f
@@ -81,7 +99,7 @@ def calculate_optimal_path(pose_a, pose_b, num_points) -> list[Pose]:
 
 
 
-class AStar_Path_Follower:
+class HybridStar_Path_Follower:
     def __init__(self, map_grid, robot_radius):
         self.map_grid = map_grid
         self.node_grid = [
@@ -287,6 +305,7 @@ class AStar_Path_Follower:
                 child_node.h = self.heuristic(child_node.pose, end)
                 child_node.f = child_node.g + child_node.h
                 child_node.parent = current
+                child_node.velocity_sign = velocity_sign
                 
                 heapq.heappush(open, child_node)
             print(current.x, current.y, current.theta)
@@ -336,6 +355,90 @@ def perpendicular_distance(point, line_start, line_end):
     denominator = math.hypot(x2-x1, y2-y1)
     return numerator / denominator
 
+class AStar_Path_Follower:
+    def __init__(self, map_grid):
+        self.map_grid = map_grid
+        self.node_grid = [
+            [
+                Nodee(self.map_grid[row][col], row, col)
+                for col in range(len(self.map_grid[0]))
+            ]
+            for row in range(len(self.map_grid))
+        ]
+
+    def search_neighbor(self, grid, cell_i, cell_j):
+        offsets = [(1, 1), (1, 0), (1, -1), (0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1)]
+        neighbors = []
+        for x, y in offsets:
+            neighbor_x, neighbor_y = cell_i + x, cell_j + y
+            if 0 <= neighbor_x < len(grid) and 0 <= neighbor_y < len(grid[0]):
+                neighbors.append((grid[neighbor_x][neighbor_y]))
+        return neighbors
+
+    def reconstruct_path(self, end_node):
+        path = []
+        current = end_node
+        while current is not None:
+            path.append(Point(current.idx, current.idy))
+            current = current.parent
+        path.reverse()
+        return path
+
+    def inflate_grid(self, inflation_radius: int):
+        inflation_radius_cells = inflation_radius  # Since each cell is 1 ft
+        rows = len(self.node_grid)
+        cols = len(self.node_grid[0]) if rows > 0 else 0
+
+        to_inflate = set()
+
+        for row in self.node_grid:
+            for node in row:
+                if node.value == 1:
+                    x, y = node.idx, node.idy
+                    for dx in range(
+                        -inflation_radius_cells, inflation_radius_cells + 1
+                    ):
+                        for dy in range(
+                            -inflation_radius_cells, inflation_radius_cells + 1
+                        ):
+                            if (
+                                abs(dx) + abs(dy) <= inflation_radius_cells
+                            ):  # Manhattan distance
+                                nx, ny = x + dx, y + dy
+                                if 0 <= nx < rows and 0 <= ny < cols:
+                                    to_inflate.add((nx, ny))
+        for idx, idy in to_inflate:
+            self.node_grid[idx][idy].value = 1
+
+    def find_path(self, start, end):
+        obstacle = 1
+        closed = []
+        open = [start]
+        heapq.heapify(open)
+        while len(open) > 0:
+            current_node = heapq.heappop(open)
+            if current_node == end:
+                return self.reconstruct_path(end)
+            closed.append(current_node)
+            children = self.search_neighbor(
+                self.node_grid, current_node.idx, current_node.idy
+            )
+            for child in children:
+                if child in closed or child.value == obstacle:
+                    continue
+                if child in open and child.g <= current_node.g:
+                    continue
+                child.g = current_node.g + math.hypot(
+                    child.idx - current_node.idx, child.idy - current_node.idy
+                )
+                child.h = math.hypot(end.idx - child.idx, end.idy - child.idy)
+                child.f = child.h + child.g
+                child.parent = current_node  # new code
+                if child not in open:
+                    heapq.heappush(open, child)
+
+        return None
+
 
 
 grid =  [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 
@@ -370,14 +473,20 @@ grid =  [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         [1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1],
         [1, 1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]]
 
-finder = AStar_Path_Follower(grid, robot_radius=1.5)
+
+
+finder = HybridStar_Path_Follower(grid, robot_radius=1.5)
+alessfinder = AStar_Path_Follower(grid)
 
 path = finder.find_path(
-    Node(7,7,3*math.pi/2, 0),
-    Node(1,1,math.pi/2, 0),
-    v_max=0.5,
+    Node(1,0,math.pi/2, 0),
+    Node(8,16,0, 0),
+    v_max=0.1,
     ω_max=math.pi/8,
-) #default, v_max = 0.1, ω_max = math.pi/8
+)
+
+other_path = alessfinder.find_path(alessfinder.node_grid[1][0], alessfinder.node_grid[8][16])
+ #default, v_max = 0.1, ω_max = math.pi/8
 # path = calculate_optimal_path(Pose(8,7,math.pi), Pose(0,0,-math.pi/2), 15)
 
 # path = calculate_optimal_path(Pose(4, 6, 0), Pose(8, 15, 0), 15)
@@ -457,11 +566,14 @@ path_transformx = []
 path_transformy = []
 simplified_x = []
 simplified_y = []
+path_smoothx_2 = []
+path_smoothy_2 = []
 if path:
     print(len(path))
 # Plot the path if it exists
-if path:
+if path and other_path:
     chaikin = Chaikin_Smooth([Point (pose.x, pose.y) for pose in path])  # Convert Pose to Point
+    smoothed_path_second =  Chaikin_Smooth(other_path).smooth_path(num_iterations=4)
     smoothed_path = chaikin.smooth_path(num_iterations=4)  # Smooth the path
     transformed_path = transform_global_to_local(smoothed_path, Point(1, 0), math.pi/2)  # Transform to local coordinates
     simplified_path = simplify_path([Point(pose.x, pose.y) for pose in smoothed_path], epsilon=0.05)
@@ -477,6 +589,9 @@ if path:
     for pose in simplified_path:
         simplified_x.append(pose.x)
         simplified_y.append(pose.y)
+    for point in smoothed_path_second:
+        path_smoothx_2.append(point.x)
+        path_smoothy_2.append(point.y)
 
 
 for pose in searched_poses:
@@ -484,12 +599,13 @@ for pose in searched_poses:
     searched_y.append(pose.y)  # Y-coordinates of the searched poses
 
 plt.plot(path_x, path_y, linestyle="-", color="green", label="Path Points")
-plt.plot(path_smoothx, path_smoothy, linestyle="--", color="purple", label="Smoothed Path")
-plt.plot(path_transformx, path_transformy, linestyle="-", color="blue", label="Transformed Path")
-plt.scatter(searched_x, searched_y, linestyle="-",color="orange", s=10, label="Searched Points")
-plt.scatter(simplified_x, simplified_y, linestyle="-",color="black", s=30, label="Simplified Path")
-plt.plot(simplified_x, simplified_y, linestyle="--", color="red", label="Smoothed Path")
-
+plt.plot(path_smoothx, path_smoothy, linestyle="--", color="purple", label="Hybrid A* Smoothed Path")
+plt.plot(path_smoothx_2, path_smoothy_2, linestyle="--", color="orange", label="A* Smoothed Path")
+# plt.plot(path_transformx, path_transformy, linestyle="-", color="blue", label="Transformed Path")
+# plt.scatter(searched_x, searched_y, linestyle="-",color="orange", s=10, label="Searched Points")
+# plt.scatter(simplified_x, simplified_y, linestyle="-",color="black", s=30, label="Simplified Path")
+# plt.plot(simplified_x, simplified_y, linestyle="--", color="red", label="Smoothed Path")
+plt.legend()
 
     # plt.scatter(
     #     path_x, path_y, color="green", s=30, label="Path Points"
